@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2020-2023 CERN
+# SPDX-FileCopyrightText: 2023 GSI Helmholtzzentrum für Schwerionenforschung
+# SPDX-FileNotice: All rights not expressly granted are reserved.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later OR EUPL-1.2+
+
+[build-system]
+requires = [
+    'setuptools >= 45',
+    'setuptools-scm[toml] ~= 7.0',
+    'wheel',
+]
+build-backend = 'setuptools.build_meta'
+
+[project]
+dynamic = ['version']
+name = 'cernml-coi-evert'
+authors = [
+    {name = 'Nico Madysa', email = 'nico.madysa@cern.ch'},
+]
+description = 'Turn optimization loops inside out'
+readme = 'README.md'
+license = {file='COPYING'}
+requires-python = '>=3.7'
+dependencies = [
+    'cernml-coi ~= 0.8.0',
+    'numpy ~= 1.20',
+    'scipy ~= 1.1',
+]
+classifiers = [
+    'Development Status :: 3 - Alpha',
+    'Intended Audience :: Science/Research',
+    'Natural Language :: English',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    'Topic :: Scientific/Engineering :: Physics',
+    'Typing :: Typed',
+]
+
+[tool.setuptools]
+zip-safe = true
+package-data = {'*' = ['py.typed']}
+
+[tool.setuptools_scm]
+
+[tool.black]
+target-version = ['py37', 'py38', 'py39']
+
+[tool.isort]
+profile = 'black'
+
+[tool.pytest.ini_options]
+addopts = '--doctest-modules'
+testpaths = ['src', 'tests']
+asyncio_mode = 'auto'
+doctest_optionflags = ['IGNORE_EXCEPTION_DETAIL']
+
+[tool.pylint.'messages control']
+disable = [
+    'fixme',
+    'line-too-long',
+    'similarities',
+    'unpacking-non-sequence',
+    'unsubscriptable-object',
+]
+
+[tool.mypy]
+disallow_untyped_defs = true
+explicit_package_bases = true
+mypy_path = '$MYPY_CONFIG_FILE_DIR/src'
+
+[[tool.mypy.overrides]]
+module = ['scipy.*', 'gym.*', 'matplotlib.*']
+ignore_missing_imports = true
