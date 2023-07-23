@@ -209,9 +209,13 @@ class RendezVousQueue(Generic[ItemT]):
         becomes available.
         """
         # Check if we can get a getter queue. If not, it means there are
-        # putters waiting that we can synchronize with.
-        if (getters := self._getter_queue()) is None:
-            return self.get_nowait()
+        # putters waiting that we can synchronize with. Repeat in case
+        # all waiting putters are in the cancelled state.
+        while (getters := self._getter_queue()) is None:
+            try:
+                return self.get_nowait()
+            except QueueEmpty:
+                pass
         # There are no putters in the queue, append a getter and wait
         # for it.
         getter = self._loop.create_future()
@@ -244,9 +248,13 @@ class RendezVousQueue(Generic[ItemT]):
         becomes available.
         """
         # Check if we can get a putter queue. If not, it means there are
-        # getters waiting that we can synchronize with.
-        if (putters := self._putter_queue()) is None:
-            return self.put_nowait(item)
+        # getters waiting that we can synchronize with. Repeat in case
+        # all waiting getters are in the cancelled state.
+        while (putters := self._putter_queue()) is None:
+            try:
+                return self.put_nowait(item)
+            except QueueFull:
+                pass
         # There are no getters in the queue, append a putter and wait
         # for it.
         putter = self._loop.create_future()

@@ -92,6 +92,26 @@ async def test_put_get() -> None:
     assert sent is received
 
 
+async def test_get_after_cancelled_put() -> None:
+    queue = RendezVousQueue[t.Any]()
+    putter = asyncio.create_task(queue.put(False))
+    await asyncio.sleep(0)
+    putter.cancel()
+    assert not putter.done() and not queue.empty()
+    asyncio.create_task(queue.put(True))
+    assert await queue.get()
+
+
+async def test_put_after_cancelled_get() -> None:
+    queue = RendezVousQueue[t.Any]()
+    getter = asyncio.create_task(queue.get())
+    await asyncio.sleep(0)
+    getter.cancel()
+    assert not getter.done() and not queue.full()
+    asyncio.create_task(queue.get())
+    await queue.put(True)
+
+
 async def test_many_puts_before_get() -> None:
     queue = RendezVousQueue[t.Any]()
     items = [object() for _ in range(100)]
@@ -163,11 +183,29 @@ async def test_free_for_all() -> None:
         await asyncio.sleep(random.random())
         return await queue.get()
 
-    items = frozenset(object() for _ in range(10000))
+    async def cancelled_getter() -> object:
+        task = asyncio.create_task(queue.get())
+        await asyncio.sleep(0)
+        task.cancel()
+        return await task
+
+    async def cancelled_putter(item: object) -> None:
+        task = asyncio.create_task(queue.put(item))
+        await asyncio.sleep(0)
+        task.cancel()
+        await task
+
+    items = frozenset(range(10000))
     tasks = [asyncio.create_task(getter()) for _ in items]
     tasks.extend(asyncio.create_task(putter(i)) for i in items)
+    tasks.extend(asyncio.create_task(cancelled_getter()) for _ in items)
+    tasks.extend(asyncio.create_task(cancelled_putter(i)) for i in items)
     random.shuffle(tasks)
 
-    results = await asyncio.gather(*tasks)
-    received: t.FrozenSet[object] = frozenset(filter(None, results))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    none_count = sum(1 for res in results if res is None)
+    cancel_count = sum(1 for res in results if isinstance(res, asyncio.CancelledError))
+    received = frozenset(res for res in results if isinstance(res, int))
+    assert none_count == len(items)
+    assert cancel_count == 2 * len(items)
     assert items == received
