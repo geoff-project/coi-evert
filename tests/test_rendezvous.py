@@ -115,6 +115,43 @@ async def test_many_gets_before_put() -> None:
     assert not pending and received == set(items)
 
 
+async def test_close_after_get() -> None:
+    queue = RendezVousQueue[t.Any]()
+    tasks = [asyncio.create_task(queue.get() if i else queue.put(i)) for i in range(4)]
+    await asyncio.sleep(0)
+    queue.close()
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    assert queue.empty() and queue.full()
+    assert results[:2] == [None, 0]
+    assert all(isinstance(exc, asyncio.CancelledError) for exc in results[2:])
+
+
+async def test_close_after_put() -> None:
+    queue = RendezVousQueue[t.Any]()
+    tasks = [asyncio.create_task(queue.put(i) if i else queue.get()) for i in range(4)]
+    await asyncio.sleep(0)
+    queue.close()
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    assert queue.empty() and queue.full()
+    assert results[:2] == [1, None]
+    assert all(isinstance(exc, asyncio.CancelledError) for exc in results[2:])
+
+
+async def test_state_after_close() -> None:
+    queue = RendezVousQueue[t.Any]()
+    queue.close()
+    assert queue.empty() and queue.full()
+    with pytest.raises(asyncio.CancelledError):
+        queue.get_nowait()
+    with pytest.raises(asyncio.CancelledError):
+        queue.put_nowait(None)
+    with pytest.raises(asyncio.CancelledError):
+        await queue.get()
+    with pytest.raises(asyncio.CancelledError):
+        await queue.put(None)
+    queue.close()
+
+
 async def test_free_for_all() -> None:
     queue = RendezVousQueue[t.Any]()
 

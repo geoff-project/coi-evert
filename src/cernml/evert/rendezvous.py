@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from asyncio import Future, get_event_loop
+from asyncio import CancelledError, Future, get_event_loop
 from typing import Any, Deque, Generic, Optional, Tuple, TypeVar, Union, cast
 
 from typing_extensions import TypeGuard
 
 __all__ = ["RendezVousQueue", "QueueFull", "QueueEmpty"]
+
 
 ItemT = TypeVar("ItemT")
 """Type variable for our queue."""
@@ -103,24 +104,31 @@ class RendezVousQueue(Generic[ItemT]):
         Hello world!
     """
 
+    __slots__ = ("_loop", "_waiters")
+
     def __init__(self) -> None:
         self._loop = get_event_loop()
         # Internally, we maintain a double-ended queue of getters or
         # putters. It's always all-putters or all-getters. This is
-        # because if we'd try to put while a getter is in the queue,
-        # we'll just remove the getter and queue up with it. The same
+        # because if we'd try to put while a getter is in the deque,
+        # we'll just remove the getter and pair up with it. The same
         # goes vice versa.
-        # If the queue is empty (``bool(self._waiters) is False``), it
+        # If the deque is empty (``bool(self._waiters) is False``), it
         # can be both a getter or a putter queue. Some care has to be
         # taken about this edge case.
-        self._waiters: Union[Deque[_Getter[ItemT]], Deque[_Putter[ItemT]]]
+        # We replace the deque with `None` once the queue has been
+        # closed. This ensures no-one can operate on it anymore.
+        self._waiters: Union[None, Deque[_Getter[ItemT]], Deque[_Putter[ItemT]]]
         self._waiters = Deque[Any]()
 
     def _getter_queue(self) -> Optional[Deque[_Getter[ItemT]]]:
         """Return the queue if it is empty or contains getters.
 
-        If the queue contains putters, return `None` instead.
+        If the queue contains putters, return `None` instead. If the
+        queue has been closed, raise `CancelledError`.
         """
+        if self._waiters is None:
+            raise CancelledError("queue has been closed")
         if _has_putters(self._waiters):
             return None
         # SAFETY: At this point, the queue is either empty or only
@@ -130,8 +138,11 @@ class RendezVousQueue(Generic[ItemT]):
     def _putter_queue(self) -> Optional[Deque[_Putter[ItemT]]]:
         """Return the queue if it is empty or contains putters.
 
-        If the queue contains getters, return `None` instead.
+        If the queue contains getters, return `None` instead. If the
+        queue has been closed, raise `CancelledError`.
         """
+        if self._waiters is None:
+            raise CancelledError("queue has been closed")
         if _has_getters(self._waiters):
             return None
         # SAFETY: At this point, the queue is either empty or only
@@ -163,7 +174,7 @@ class RendezVousQueue(Generic[ItemT]):
             >>> asyncio.run(runner())
             [1, 2, 3]
         """
-        return not _has_putters(self._waiters)
+        return self._waiters is None or not _has_putters(self._waiters)
 
     def full(self) -> bool:
         """Return True if `put_nowait()` would raise an exception.
@@ -189,7 +200,7 @@ class RendezVousQueue(Generic[ItemT]):
             >>> asyncio.run(runner())
             [None, None, None]
         """
-        return not _has_getters(self._waiters)
+        return self._waiters is None or not _has_getters(self._waiters)
 
     async def get(self) -> ItemT:
         """Synchronize with a `put()` and return its item.
@@ -208,7 +219,7 @@ class RendezVousQueue(Generic[ItemT]):
         try:
             return await getter
         except:  # noqa: E722
-            getter.cancel()
+            getter.cancel("queue has been closed")
             _remove_silently(getters, getter)
             raise
 
@@ -243,7 +254,7 @@ class RendezVousQueue(Generic[ItemT]):
         try:
             await putter
         except:  # noqa: E722
-            putter.cancel()
+            putter.cancel("queue has been closed")
             _remove_silently(putters, (item, putter))
             raise
 
@@ -260,3 +271,41 @@ class RendezVousQueue(Generic[ItemT]):
                 getter.set_result(item)
                 return
         raise QueueFull()
+
+    def close(self) -> None:
+        """Close the queue, preventing all further interactions.
+
+        Because rendez-vous queues don't buffer their items, any task
+        blocked when it is closed will immediately raise a
+        `~asyncio.CancelledError`.
+
+        Calling this method a second time does nothing.
+
+        Example:
+
+            >>> import asyncio
+            ...
+            >>> async def runner():
+            ...     queue = RendezVousQueue()
+            ...     task = asyncio.create_task(queue.put(1))
+            ...     await asyncio.sleep(0)
+            ...     assert not task.done()
+            ...     queue.close()
+            ...     await asyncio.sleep(0)
+            ...     assert task.cancelled()
+            ...
+            >>> asyncio.run(runner())
+
+        """
+        if self._waiters is None:
+            return
+        waiters, self._waiters = self._waiters, None
+        if _has_getters(waiters):
+            for getter in waiters:
+                getter.cancel("queue has been closed")
+            return
+        # SAFETY: At this point, the deque cannot contain getters, so it
+        # either contains putters or is empty.
+        waiters = cast(Deque[_Putter[ItemT]], waiters)
+        for _, putter in waiters:
+            putter.cancel("queue has been closed")
