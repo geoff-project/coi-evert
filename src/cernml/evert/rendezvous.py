@@ -303,7 +303,6 @@ class RendezVousQueue(Generic[ItemT]):
             ...     assert task.cancelled()
             ...
             >>> asyncio.run(runner())
-
         """
         if self._waiters is None:
             return
