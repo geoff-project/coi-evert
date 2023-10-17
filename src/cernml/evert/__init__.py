@@ -1,15 +1,12 @@
 import logging
 import queue
 import typing as t
-import warnings
 from threading import Thread
 
-import gym
 import numpy as np
-import scipy.optimize
 
 Params = np.ndarray
-Loss = np.floating
+Loss = float
 
 Objective = t.Callable[[Params], Loss]
 SolveFunc = t.Callable[[Objective, Params], Params]
@@ -93,47 +90,6 @@ def channel() -> t.Tuple[ChannelSide[SendT, RecvT], ChannelSide[RecvT, SendT]]:
     return ChannelSide(forward, backward), ChannelSide(backward, forward)
 
 
-class Cobyla:
-    def __init__(self, maxfun: int = 100, ftol: float = 1e-4) -> None:
-        self.maxfun = maxfun
-        self.ftol = ftol
-
-    def make_solve_func(
-        self, bounds: tuple[Params, Params], constraints: list
-    ) -> SolveFunc:
-        warnings.warn(f"ignoring constraints: {constraints!r}")
-        lb, ub = bounds
-
-        def solve(objective: Objective, x0: Params) -> Params:
-            res = scipy.optimize.minimize(
-                objective,
-                x0,
-                bounds=scipy.optimize.Bounds(lb, ub),
-                method="Powell",
-                options={"maxiter": self.maxfun, "ftol": self.ftol},
-            )
-            return res.x
-
-        return solve
-
-    def make_solve_func_from_env(self, env: "ParabolaEnv") -> SolveFunc:
-        bounds = (env.optimization_space.low, env.optimization_space.high)
-        constraints = list(env.constraints)
-        return self.make_solve_func(bounds, constraints)
-
-
-class ParabolaEnv:
-    def __init__(self) -> None:
-        self.optimization_space = gym.spaces.Box(-1, 1, shape=(2,), dtype=float)
-        self.constraints: list[scipy.optimize.LinearConstraint] = []
-
-    def get_initial_params(self) -> Params:
-        return self.optimization_space.sample()
-
-    def compute_single_objective(self, params: Params) -> Loss:
-        return np.linalg.norm(params)
-
-
 class SolveThread(Thread):
     def __init__(
         self, solve: SolveFunc, x0: Params, recv: ChannelSide[Params, Loss]
@@ -179,8 +135,6 @@ class Eversion:
             self._channel.close()
         except CancelledError:
             self._logger.info("… already cancelled!")
-        except CancelledError:
-            self._logger.info("… already cancelled!")
 
     def join(self) -> None:
         self.cancel()
@@ -222,35 +176,3 @@ class Eversion:
 
 def evert(solve: SolveFunc, x0: Params) -> Eversion:
     return Eversion(solve, x0)
-
-
-def run_normal(opt: Cobyla, env: ParabolaEnv) -> Params:
-    solve = opt.make_solve_func_from_env(env)
-    return solve(env.compute_single_objective, env.get_initial_params())
-
-
-def run_everted(opt: Cobyla, env: ParabolaEnv) -> Params:
-    solve = opt.make_solve_func_from_env(env)
-    eversion = evert(solve, env.get_initial_params())
-    try:
-        while True:
-            params = eversion.ask()
-            eversion.tell(env.compute_single_objective(params))
-    except StopIteration as exc:
-        [res] = exc.args
-        return res
-
-
-def main() -> None:
-    logging.basicConfig(level="INFO")
-    opt = Cobyla()
-    env = ParabolaEnv()
-    optimum = run_everted(opt, env)
-    print(
-        f"f({', '.join(format(f, '.3g') for f in optimum)}) =",
-        f"{env.compute_single_objective(optimum):.3g}",
-    )
-
-
-if __name__ == "__main__":
-    main()

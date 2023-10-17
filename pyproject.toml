@@ -67,6 +67,7 @@ disable = [
     'fixme',
     'line-too-long',
     'similarities',
+    'unbalanced-tuple-unpacking',
     'unpacking-non-sequence',
     'unsubscriptable-object',
 ]
