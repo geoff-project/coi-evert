@@ -1,7 +1,5 @@
 """Tests for `RendezVousQueue`."""
 
-# pylint: disable = missing-function-docstring
-
 import asyncio
 import random
 import typing as t

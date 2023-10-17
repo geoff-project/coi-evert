@@ -62,6 +62,22 @@ testpaths = ['src', 'tests']
 asyncio_mode = 'auto'
 doctest_optionflags = ['IGNORE_EXCEPTION_DETAIL']
 
+[tool.coverage.run]
+source = ['src/']
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    '^\s*from .* import',
+    '^\s*import ',
+    'if \w*\.TYPE_CHECKING',
+    '^\s*\.\.\.$',
+    'raise NotImplementedError',
+]
+
+[tool.pylint.main]
+ignore-patterns = ['.*\.pyi$', 'test_.*\.py$']
+
 [tool.pylint.'messages control']
 disable = [
     'fixme',
