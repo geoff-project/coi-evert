@@ -1,16 +1,38 @@
 """Two-way channels for communication between tasks."""
 
 from __future__ import annotations
+
 import asyncio
+import sys
 import typing as t
-from .rendezvous import RendezVousQueue, QueueEmpty, QueueFull
+from logging import getLogger
+
+from .rendezvous import QueueEmpty, QueueFull, RendezVousQueue
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self
+else:
+    from typing import Self
+
+
+LOG = getLogger(__name__)
 
 SendT = t.TypeVar("SendT")
 RecvT = t.TypeVar("RecvT")
 
 
-def channel() -> t.Tuple[Connection[SendT, RecvT], Connection[RecvT, SendT]]:
+class _Default:
+    # pylint: disable = too-few-public-methods
+    __slots__ = ()
+
+
+def channel(
+    send_type: t.Union[type[SendT], type[_Default]] = _Default,
+    recv_type: t.Union[type[RecvT], type[_Default]] = _Default,
+    /,
+) -> t.Tuple[Connection[SendT, RecvT], Connection[RecvT, SendT]]:
     """Create a pair of `Connection` objects."""
+    # pylint: disable = unused-argument
     forward = RendezVousQueue[SendT]()
     backward = RendezVousQueue[RecvT]()
     return Connection(forward, backward), Connection(backward, forward)
@@ -53,6 +75,15 @@ class Connection(t.Generic[SendT, RecvT]):
         self._recv = recv
 
     def __del__(self) -> None:
+        # Note that we use `and`, but `self.closed` uses `or`!
+        if not self._send.closed and not self._recv.closed:
+            LOG.warning("channel %s deleted without closing", self)
+            self.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_args: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -103,8 +134,8 @@ class Connection(t.Generic[SendT, RecvT]):
             `~asyncio.CancelledError`: if the queue is closed before or
                 while waiting.
         """
-        # If the other side is waiting on _send.get(), they cannot
-        # _recv.put().
+        # If the other side is waiting on _send.get(), they won't
+        # _recv.put(). That's a deadlock.
         if not self._send.full():
             raise QueueEmpty()
         try:
@@ -139,8 +170,8 @@ class Connection(t.Generic[SendT, RecvT]):
             `~asyncio.CancelledError`: if the queue is closed before or
                 while waiting.
         """
-        # If the other side is waiting on _recv.put(), they cannot
-        # _send.get().
+        # If the other side is waiting on _recv.put(), they won't
+        # _send.get(). That's a deadlock.
         if not self._recv.empty():
             raise QueueFull()
         try:
