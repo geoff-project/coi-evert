@@ -170,6 +170,7 @@ async def test_state_after_close() -> None:
     queue.close()
 
 
+@pytest.mark.slow
 async def test_free_for_all() -> None:
     queue = RendezVousQueue[t.Any]()
 

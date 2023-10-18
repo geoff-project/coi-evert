@@ -66,6 +66,9 @@ addopts = '--doctest-modules'
 testpaths = ['src', 'tests']
 asyncio_mode = 'auto'
 doctest_optionflags = ['IGNORE_EXCEPTION_DETAIL']
+markers = [
+    'slow: marks tests as slow (deselect with `-m "not slow"`)'
+]
 
 [tool.coverage.run]
 source = ['src/']
