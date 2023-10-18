@@ -37,6 +37,12 @@ async def yield_to_other_tasks() -> None:
     await asyncio.sleep(0)
 
 
+async def test_context_manager() -> None:
+    with RendezVousQueue[t.Any]() as queue:
+        assert not queue.closed
+    assert queue.closed
+
+
 async def test_default_is_empty_and_full() -> None:
     queue = RendezVousQueue[t.Any]()
     assert queue.empty() and queue.full()

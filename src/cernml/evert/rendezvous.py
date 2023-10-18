@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 import asyncio
+import sys
 from typing import Any, Deque, Generic, Optional, Tuple, TypeVar, Union, cast
 
-if sys.version_info < (3, 10):
-    from typing_extensions import TypeGuard
+if sys.version_info < (3, 11):
+    from typing_extensions import Self, TypeGuard
 else:
-    from typing_extensions import TypeGuard
+    from typing import Self, TypeGuard
 
 __all__ = ["RendezVousQueue", "QueueFull", "QueueEmpty"]
 
@@ -152,6 +152,12 @@ class RendezVousQueue(Generic[ItemT]):
         # SAFETY: At this point, the queue is either empty or only
         # contains putters.
         return cast(Deque[_Putter[ItemT]], self._waiters)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_args: object) -> None:
+        self.close()
 
     @property
     def closed(self) -> bool:
