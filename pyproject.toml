@@ -23,9 +23,7 @@ readme = 'README.md'
 license = {file='COPYING'}
 requires-python = '>=3.7'
 dependencies = [
-    'cernml-coi ~= 0.8.0',
-    'numpy ~= 1.20',
-    'scipy ~= 1.1',
+    'typing-extensions; python_version < "3.10"',
 ]
 classifiers = [
     'Development Status :: 3 - Alpha',
@@ -44,6 +42,13 @@ classifiers = [
     'Typing :: Typed',
 ]
 
+[project.optional-dependencies]
+examples = [
+    'cernml-coi ~= 0.8.13',
+    'cernml-coi-optimizers ~= 1.1',
+    'numpy ~= 1.20',
+    'scipy ~= 1.1',
+]
 [tool.setuptools]
 zip-safe = true
 package-data = {'*' = ['py.typed']}
@@ -64,6 +69,7 @@ doctest_optionflags = ['IGNORE_EXCEPTION_DETAIL']
 
 [tool.coverage.run]
 source = ['src/']
+omit = ['src/cernml/evert/_runner.py']
 branch = true
 
 [tool.coverage.report]
@@ -77,6 +83,9 @@ exclude_also = [
 
 [tool.pylint.main]
 ignore-patterns = ['.*\.pyi$', 'test_.*\.py$']
+
+[tool.pylint.basic]
+good-names = ['i', 'j', 'k', 'x0', '_']
 
 [tool.pylint.'messages control']
 disable = [

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from asyncio import CancelledError, Future, get_event_loop
+import sys
+import asyncio
 from typing import Any, Deque, Generic, Optional, Tuple, TypeVar, Union, cast
 
-from typing_extensions import TypeGuard
+if sys.version_info < (3, 10):
+    from typing_extensions import TypeGuard
+else:
+    from typing_extensions import TypeGuard
 
 __all__ = ["RendezVousQueue", "QueueFull", "QueueEmpty"]
 
@@ -13,14 +17,14 @@ __all__ = ["RendezVousQueue", "QueueFull", "QueueEmpty"]
 ItemT = TypeVar("ItemT")
 """Type variable for our queue."""
 
-_Getter = Future[ItemT]
+_Getter = asyncio.Future[ItemT]
 """A receiving end of our queue.
 
 If a putter finds that there's already a getter waiting, it will
 complete the getter's future with the sent item.
 """
 
-_Putter = Tuple[ItemT, Future[None]]
+_Putter = Tuple[ItemT, asyncio.Future[None]]
 """A sending end of our queue.
 
 If a getter finds that there's already a putter waiting, it will take
@@ -107,7 +111,7 @@ class RendezVousQueue(Generic[ItemT]):
     __slots__ = ("_loop", "_waiters")
 
     def __init__(self) -> None:
-        self._loop = get_event_loop()
+        self._loop = asyncio.get_event_loop()
         # Internally, we maintain a double-ended queue of getters or
         # putters. It's always all-putters or all-getters. This is
         # because if we'd try to put while a getter is in the deque,
@@ -125,10 +129,10 @@ class RendezVousQueue(Generic[ItemT]):
         """Return the queue if it is empty or contains getters.
 
         If the queue contains putters, return `None` instead. If the
-        queue has been closed, raise `CancelledError`.
+        queue has been closed, raise `~asyncio.CancelledError`.
         """
         if self._waiters is None:
-            raise CancelledError("queue has been closed")
+            raise asyncio.CancelledError("queue has been closed")
         if _has_putters(self._waiters):
             return None
         # SAFETY: At this point, the queue is either empty or only
@@ -139,15 +143,20 @@ class RendezVousQueue(Generic[ItemT]):
         """Return the queue if it is empty or contains putters.
 
         If the queue contains getters, return `None` instead. If the
-        queue has been closed, raise `CancelledError`.
+        queue has been closed, raise `~asyncio.CancelledError`.
         """
         if self._waiters is None:
-            raise CancelledError("queue has been closed")
+            raise asyncio.CancelledError("queue has been closed")
         if _has_getters(self._waiters):
             return None
         # SAFETY: At this point, the queue is either empty or only
         # contains putters.
         return cast(Deque[_Putter[ItemT]], self._waiters)
+
+    @property
+    def closed(self) -> bool:
+        """This is True if `close()` has been called, otherwise False."""
+        return self._waiters is None
 
     def empty(self) -> bool:
         """Return True if `get_nowait()` would raise an exception.
@@ -206,7 +215,8 @@ class RendezVousQueue(Generic[ItemT]):
         """Synchronize with a `put()` and return its item.
 
         If there is no partner to synchronize with, wait until one
-        becomes available.
+        becomes available. If the queue is closed while waiting, raise
+        `~asyncio.CancelledError`.
         """
         # Check if we can get a getter queue. If not, it means there are
         # putters waiting that we can synchronize with. Repeat in case
@@ -231,7 +241,8 @@ class RendezVousQueue(Generic[ItemT]):
         """Attempt to synchronize with a `put()` and return its item.
 
         If there is no partner to synchronize with, raise `QueueEmpty`
-        without blocking.
+        without blocking. If the queue has already been closed, raise
+        `~asyncio.CancelledError`.
         """
         putters = self._putter_queue()
         while putters:
@@ -245,7 +256,8 @@ class RendezVousQueue(Generic[ItemT]):
         """Synchronize with a `get()` and return its item.
 
         If there is no partner to synchronize with, wait until one
-        becomes available.
+        becomes available. If the queue is closed while waiting, raise
+        `~asyncio.CancelledError`.
         """
         # Check if we can get a putter queue. If not, it means there are
         # getters waiting that we can synchronize with. Repeat in case
@@ -270,7 +282,8 @@ class RendezVousQueue(Generic[ItemT]):
         """Attempt to synchronize with a `get()` and return its item.
 
         If there is no partner to synchronize with, raise `QueueFull`
-        without blocking.
+        without blocking. If the queue has already been closed, raise
+        `~asyncio.CancelledError`.
         """
         getters = self._getter_queue()
         while getters:
