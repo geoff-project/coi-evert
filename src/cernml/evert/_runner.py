@@ -10,14 +10,14 @@ import contextvars
 import enum
 import functools
 import signal
+import sys
 import threading
 import typing as t
 
 if t.TYPE_CHECKING:
-    import sys
+    from types import FrameType
 
     from _typeshed import Unused
-    from types import FrameType
 
     if sys.version_info < (3, 11):
         from typing_extensions import Self
@@ -226,7 +226,6 @@ def _cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> None:
             )
 
 
-try:
-    from asyncio import Runner  # type: ignore # noqa: F811
-except ImportError:
-    pass
+# On Python 3.11+, just use the stdlib Runner.
+if sys.version_info >= (3, 11):
+    from asyncio import Runner  # type: ignore[assignment] # noqa: F811

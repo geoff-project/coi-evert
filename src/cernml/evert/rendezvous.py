@@ -111,7 +111,7 @@ class RendezVousQueue(Generic[ItemT]):
     __slots__ = ("_loop", "_waiters")
 
     def __init__(self) -> None:
-        self._loop = asyncio.get_event_loop()
+        self._loop = asyncio.get_running_loop()
         # Internally, we maintain a double-ended queue of getters or
         # putters. It's always all-putters or all-getters. This is
         # because if we'd try to put while a getter is in the deque,

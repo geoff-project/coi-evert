@@ -37,10 +37,35 @@ async def test_empty() -> None:
     x0 = mock.Mock(name="x0")
     # When:
     eversion = evert(solve, x0)
-    result = await eversion.join()
+    with pytest.raises(asyncio.CancelledError, match=r"solve\(\) never started"):
+        await eversion.join()
     # Then:
-    solve.assert_called_once_with(mock.ANY, x0)
-    assert result == solve.return_value
+    solve.assert_not_called()
+
+
+async def test_double_cancel() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    x0 = mock.Mock(name="x0")
+    # When:
+    eversion = evert(solve, x0)
+    eversion.cancel()
+    eversion.cancel()
+    # Then:
+    solve.assert_not_called()
+
+
+async def test_ask_after_cancel() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    x0 = mock.Mock(name="x0")
+    # When:
+    eversion = evert(solve, x0)
+    eversion.cancel()
+    with pytest.raises(asyncio.CancelledError, match=r"solve\(\) never started"):
+        await eversion.ask()
+    # Then:
+    solve.assert_not_called()
 
 
 async def test_once() -> None:

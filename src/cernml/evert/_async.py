@@ -43,17 +43,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import inspect
 import sys
 import typing as t
+import concurrent.futures
 
 from ._types import Loss, OptResult, Params, SolveFunc
 from .channel import Connection, channel
 from .rendezvous import QueueEmpty, QueueFull
 
 if sys.version_info < (3, 11):
-    from typing_extensions import Self
+    from typing_extensions import Self, TypeAlias
 else:
-    from typing import Self
+    from typing import Self, TypeAlias
 
 
 def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
@@ -95,18 +97,38 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
 
     def __init__(self, solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> None:
         self._logger = logging.getLogger(__name__ + ".Eversion")
-        self.loop = asyncio.get_running_loop()
-        ours: Connection[Loss, Params]
-        theirs: Connection[Params, Loss]
-        ours, theirs = channel()
-        self._conn = ours
-        self._worker = _Worker(solve, x0, theirs, self.loop)
+        self._worker: t.Union[
+            _LazyArgs[Params, Loss, OptResult],
+            _BackgroundWorker[Params, Loss, OptResult],
+            None,
+        ] = (solve, x0)
 
     async def __aenter__(self) -> Self:
+        # Access the connection to implicitly start the background thread.
+        _ = self._conn
         return self
 
     async def __aexit__(self, *exc_args: object) -> None:
         await self.join()
+
+    @property
+    def _conn(self) -> Connection[Loss, Params]:
+        # Hide `self._worker` behind property access to ensure it's
+        # always initialized before it's required.
+        if self._worker is None:
+            raise asyncio.CancelledError("solve() never started")
+        if not isinstance(self._worker, _BackgroundWorker):
+            self._logger.debug("Starting background thread …")
+            solve, x0 = self._worker
+            # Make sure not to hold onto `conn` so that it is dropped at
+            # the right time!
+            ours: Connection[Loss, Params]
+            theirs: Connection[Params, Loss]
+            ours, theirs = channel()
+            self._worker = _BackgroundWorker(solve, x0, theirs)
+            vars(self)["_conn"] = ours
+            return ours
+        return vars(self)["_conn"]
 
     def cancel(self) -> None:
         """Cancel the execution of the everted function.
@@ -118,8 +140,13 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         has properly shut down, you have to `join()` and catch the
         resulting `~asyncio.CancelledError`.
         """
-        self._logger.info("Canceling …")
-        self._conn.close()
+        if isinstance(self._worker, _BackgroundWorker):
+            self._logger.debug("Canceling background thread …")
+            self._conn.close()
+        elif self._worker is not None:
+            self._logger.debug("Canceling to prevent background thread from starting …")
+            # Ensure that worker won't get started later.
+            self._worker = None
 
     async def join(self) -> OptResult:
         """Await termination of the everted function.
@@ -133,17 +160,24 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         If the everted function was not finished yet,
         `asyncio.CancelledError` is raised.
         """
+        # If worker hadn't started yet, `cancel()` will make it
+        # unstartable.
         self.cancel()
-        self._logger.info("Joining thread …")
-        return await self._worker
+        if inspect.isawaitable(self._worker):
+            self._logger.debug("Joining thread …")
+            return await self._worker
+        raise asyncio.CancelledError("solve() never started")
 
     async def _join_ignore_exceptions(self) -> None:
+        """Helper function to `ask()` and `get()`.
+
+        Called when handling deadlock due to `MethodOrderError`.
+        """
         # pylint: disable = bare-except
         try:
-            self._conn.close()
-            await self._worker
+            await self.join()
         except:  # noqa: E722
-            pass
+            self._logger.debug("ignoring exception:", exc_info=True)
 
     async def ask(self) -> Params:
         """Progress the everted function by asking for the next callback.
@@ -164,7 +198,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
                 expected to call `tell()` instead.
         """
         try:
-            self._logger.info("Wait for params …")
+            self._logger.debug("Wait for params …")
             received = await self._conn.get()
         except QueueEmpty as exc:
             await self._join_ignore_exceptions()
@@ -174,10 +208,10 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
                 called="ask", expected="tell", context="receiving params"
             ) from exc
         except asyncio.CancelledError:
-            self._logger.info("connection closed by background thread")
+            self._logger.debug("connection closed by background thread")
             result = await self.join()
             raise OptFinished(result) from None
-        self._logger.info("Get params: %s", received)
+        self._logger.debug("Get params: %s", received)
         return received
 
     async def tell(self, loss: Loss) -> None:
@@ -200,7 +234,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
             `RuntimeError`: if you call this method when you were
                 expected to call `ask()` instead.
         """
-        self._logger.info("Put loss: %s", loss)
+        self._logger.debug("Put loss: %s", loss)
         try:
             await self._conn.put(loss)
         except QueueFull as exc:
@@ -211,7 +245,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
                 called="tell", expected="ask", context="sending loss"
             ) from exc
         except asyncio.CancelledError:
-            self._logger.info("connection closed by background thread")
+            self._logger.debug("connection closed by background thread")
             result = await self.join()
             raise OptFinished(result) from None
 
@@ -235,9 +269,9 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
             i = 0
             while True:
                 i += 1
-                self._logger.info("Iteration #%d", i)
+                self._logger.debug("Iteration #%d", i)
                 params = await self.ask()
-                self._logger.info("Yielding …")
+                self._logger.debug("Yielding …")
                 loss = yield params
                 await self.tell(loss)
         except OptFinished:
@@ -248,7 +282,10 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         self._logger = logger
 
 
-class _Worker(t.Generic[Params, Loss, OptResult]):
+_LazyArgs: TypeAlias = tuple[SolveFunc[Params, Loss, OptResult], Params]
+
+
+class _BackgroundWorker(t.Generic[Params, Loss, OptResult]):
     """Worker thread that runs `solve()` on a background thread.
 
     This could be a single function but that confuses Mypy.
@@ -261,19 +298,19 @@ class _Worker(t.Generic[Params, Loss, OptResult]):
         solve: SolveFunc[Params, Loss, OptResult],
         x0: Params,
         conn: Connection[Params, Loss],
-        loop: asyncio.AbstractEventLoop,
     ) -> None:
-        # Important: `self` is reachable from the main thread and `conn`
-        # closes when dropped. We should make sure not to hold onto it
-        # ourselves
         self.solve = solve
         self.x0 = x0
-        self.task = asyncio.create_task(
+        # Important: `self` is reachable from the main thread and
+        # `conn` closes when dropped. We should make sure not to
+        # hold onto it ourselves.
+        loop = asyncio.get_running_loop()
+        self._task = asyncio.create_task(
             asyncio.to_thread(self._solve_thread, conn, loop)
         )
 
     def __await__(self) -> t.Generator[t.Any, None, OptResult]:
-        return self.task.__await__()
+        return self._task.__await__()
 
     def _solve_thread(
         self, conn: Connection[Params, Loss], loop: asyncio.AbstractEventLoop
@@ -299,21 +336,24 @@ class _Worker(t.Generic[Params, Loss, OptResult]):
                 ) from exc
 
         def _objective(params: Params) -> Loss:
-            logger.info("Put params: %s", params)
+            logger.debug("Put params: %s", params)
             _put(params)
-            logger.info("Wait for loss …")
+            logger.debug("Wait for loss …")
             loss = _get()
-            logger.info("Get loss: %s", loss)
+            logger.debug("Get loss: %s", loss)
             return loss
 
         try:
-            logger.info("Start optimization routine")
+            logger.debug("Start optimization routine")
             result = self.solve(_objective, self.x0)
-            logger.info("Optimization routine finished!")
-            logger.info("Achieved result: %s", result)
-            logger.info("Closing connection to main thread")
+            logger.debug("Optimization routine finished!")
+            logger.debug("Achieved result: %s", result)
+            logger.debug("Closing connection to main thread")
             loop.call_soon_threadsafe(conn.close)
             return result
+        except concurrent.futures.CancelledError:  # noqa: E722
+            logger.debug("exiting after cancellation")
+            raise
         except:  # noqa: E722
             logger.exception("exiting due to exception")
             raise
