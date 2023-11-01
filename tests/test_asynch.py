@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from cernml.evert._async import evert, OptFinished, MethodOrderError
+from cernml.evert.asynch import MethodOrderError, OptFinished, evert
 
 
 async def yield_to_other_tasks() -> None:

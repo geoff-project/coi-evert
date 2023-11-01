@@ -17,7 +17,6 @@ Example:
     ...     return "final result"
     ...
     >>> async def main():
-    ...     logging.basicConfig(level="INFO")
     ...     ev = evert(solve, "args 0")
     ...     try:
     ...         i = 0
@@ -42,13 +41,13 @@ Example:
 from __future__ import annotations
 
 import asyncio
-import logging
+import concurrent.futures
 import inspect
+import logging
 import sys
 import typing as t
-import concurrent.futures
 
-from ._types import Loss, OptResult, Params, SolveFunc
+from ._types import Loss, MethodOrderError, OptFinished, OptResult, Params, SolveFunc
 from .channel import Connection, channel
 from .rendezvous import QueueEmpty, QueueFull
 
@@ -56,6 +55,18 @@ if sys.version_info < (3, 11):
     from typing_extensions import Self, TypeAlias
 else:
     from typing import Self, TypeAlias
+
+__all__ = [
+    "CancelledError",
+    "Eversion",
+    "MethodOrderError",
+    "OptFinished",
+    "SolveFunc",
+    "evert",
+]
+
+
+CancelledError = asyncio.CancelledError
 
 
 def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
@@ -71,25 +82,6 @@ def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
     flow.
     """
     return Eversion(solve, x0)
-
-
-class OptFinished(Exception, t.Generic[OptResult]):
-    """Raised by `Eversion.ask()` if the optimization has finished."""
-
-    __slots__ = ("result",)
-
-    def __init__(self, result: OptResult) -> None:
-        super().__init__(result)
-        self.result = result
-
-
-class MethodOrderError(RuntimeError):
-    """Raised when `Eversion` methods are called in the wrong order."""
-
-    def __init__(self, *, called: str, expected: str, context: str) -> None:
-        super().__init__(
-            f"called {called}() when {expected}() should be called when {context}"
-        )
 
 
 class Eversion(t.Generic[Params, Loss, OptResult]):

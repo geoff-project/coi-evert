@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 
-from cernml.evert._sync import evert, OptFinished, MethodOrderError, CancelledError
+from cernml.evert.synch import CancelledError, MethodOrderError, OptFinished, evert
 
 
 def test_context_manager() -> None:

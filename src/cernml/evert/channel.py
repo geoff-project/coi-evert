@@ -14,8 +14,16 @@ if sys.version_info < (3, 11):
 else:
     from typing import Self
 
+__all__ = [
+    "Connection",
+    "QueueEmpty",
+    "QueueFull",
+    "channel",
+]
+
 
 LOG = getLogger(__name__)
+
 
 SendT = t.TypeVar("SendT")
 RecvT = t.TypeVar("RecvT")

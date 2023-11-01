@@ -1,4 +1,43 @@
-"""The main `Eversion` API."""
+"""Synchronous, blocking version of the Eversion API.
+
+This implementation is based on the asynchronous version and simply
+blocks while waiting for the background thread.
+
+If you run asynchronous code yourself, keep in mind that this
+necessarily means that entering an eversion context will manipulate the
+global event loop. If you don't run any asynchronous code, there is
+nothing you need to worry about.
+
+Example:
+
+    >>> def solve(objective, x0):
+    ...     x = x0
+    ...     for i in range(1, 4):
+    ...         loss = objective(x)
+    ...         x = f"args {i}"
+    ...         print("solve received:", loss)
+    ...     print("solve finished")
+    ...     return "final result"
+    ...
+    >>> with evert(solve, "args 0") as ev:
+    ...     i = 0
+    ...     while True:
+    ...         i += 1
+    ...         try:
+    ...             print("main received:", ev.ask())
+    ...         except OptFinished as exc:
+    ...             print("main received:", exc.result)
+    ...             break
+    ...         ev.tell(f"result {i}")
+    main received: args 0
+    solve received: result 1
+    main received: args 1
+    solve received: result 2
+    main received: args 2
+    solve received: result 3
+    solve finished
+    main received: final result
+"""
 
 from __future__ import annotations
 
@@ -8,17 +47,23 @@ import sys
 import typing as t
 from types import TracebackType
 
-from ._async import Eversion as _AsyncEversion
-from ._async import MethodOrderError, OptFinished
-from ._types import Loss, OptResult, Params, SolveFunc
 from ._runner import Runner
+from ._types import Loss, MethodOrderError, OptFinished, OptResult, Params, SolveFunc
+from .asynch import Eversion as _AsyncEversion
 
 if sys.version_info < (3, 11):
     from typing_extensions import Self
 else:
     from typing import Self
 
-__all__ = ["CancelledError", "OptFinished", "MethodOrderError", "evert", "Eversion"]
+__all__ = [
+    "CancelledError",
+    "Eversion",
+    "MethodOrderError",
+    "OptFinished",
+    "SolveFunc",
+    "evert",
+]
 
 
 CancelledError = asyncio.CancelledError

@@ -11,7 +11,11 @@ if sys.version_info < (3, 11):
 else:
     from typing import Self, TypeGuard
 
-__all__ = ["RendezVousQueue", "QueueFull", "QueueEmpty"]
+__all__ = [
+    "QueueEmpty",
+    "QueueFull",
+    "RendezVousQueue",
+]
 
 
 ItemT = TypeVar("ItemT")
