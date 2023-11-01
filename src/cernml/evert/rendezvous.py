@@ -1,4 +1,55 @@
-"""Rendez-vous queue with zero capacity for `asyncio`."""
+"""Zero-capacity (or rendez-vous) queue for `asyncio`.
+
+Unlike with regular queues, an unpaired `~RendezvousQueue.get()` or
+`~RendezvousQueue.put()` always blocks. Only when two tasks are
+synchronized with each other (i.e. one wants to get and one wants to put
+at the same time), they transfer the item and both unblock.
+
+    >>> import asyncio
+    ...
+    >>> async def runner():
+    ...     queue = RendezvousQueue()
+    ...
+    ...     async def putter(item):
+    ...         await queue.put(item)
+    ...
+    ...     async def getter():
+    ...         print(await queue.get())
+    ...
+    ...     task1 = asyncio.create_task(putter("Hello world!"))
+    ...     task2 = asyncio.create_task(getter())
+    ...     await asyncio.gather(task1, task2)
+    ...
+    >>> asyncio.run(runner())
+    Hello world!
+
+The queue is fair, i.e. blocked tasks do not starve and will eventually
+unblock.
+
+Like `asyncio.Queue`, this queue is *not* thread-safe. If two threads
+want to use it for communication, they must ensure that all operations
+occur on the thread that contains the event loop on which the queue was
+created. The usual way to do this is to use
+:meth:`~std:asyncio.loop.call_soon_threadsafe()` to spawn tasks onto the
+queue's original event loop.
+
+While queues usually synchronizes exactly two tasks, they can in
+principle handle any number of tasks. However,  it is not going to be
+possible to predict which two tasks are going to synchronize with each
+other.
+
+Each queue is a :term:`context manager` that will close itself when
+leaving its associated :keyword:`with` block:
+
+    >>> async def runner():
+    ...     with RendezvousQueue() as q:
+    ...         print("closed inside with-block?", q.closed)
+    ...     print("closed outside with-block?", q.closed)
+    ...
+    >>> asyncio.run(runner())
+    closed inside with-block? False
+    closed outside with-block? True
+"""
 
 from __future__ import annotations
 
@@ -14,7 +65,7 @@ else:
 __all__ = [
     "QueueEmpty",
     "QueueFull",
-    "RendezVousQueue",
+    "RendezvousQueue",
 ]
 
 
@@ -72,15 +123,7 @@ def _remove_silently(queue: Deque[ItemT], item: ItemT) -> None:
         pass
 
 
-class QueueEmpty(Exception):
-    """The item couldn't be received from the queue."""
-
-
-class QueueFull(Exception):
-    """The item couldn't be sent into the queue."""
-
-
-class RendezVousQueue(Generic[ItemT]):
+class RendezvousQueue(Generic[ItemT]):
     """Zero-capacity (or rendez-vous) queue for `asyncio`.
 
     Unlike with actual queues, an unpaired `get()` or `put()` always
@@ -88,28 +131,9 @@ class RendezVousQueue(Generic[ItemT]):
     blocks on getting and one on putting), they transfer the queued item
     and both unblock.
 
-    The queue is fair, i.e. blocked tasks do not starve and will
-    eventually unblock.
-
-    Examples:
-
-        >>> import asyncio
-        ...
-        >>> async def runner():
-        ...     queue = RendezVousQueue()
-        ...
-        ...     async def putter(item):
-        ...         await queue.put(item)
-        ...
-        ...     async def getter():
-        ...         print(await queue.get())
-        ...
-        ...     task1 = asyncio.create_task(putter("Hello world!"))
-        ...     task2 = asyncio.create_task(getter())
-        ...     await asyncio.gather(task1, task2)
-        ...
-        >>> asyncio.run(runner())
-        Hello world!
+    The queues call :func:`std:asyncio.get_running_loop()` during
+    initialization, so you can only create them inside
+    a :term:`std:coroutine function`.
     """
 
     __slots__ = ("_loop", "_waiters")
@@ -162,64 +186,6 @@ class RendezVousQueue(Generic[ItemT]):
 
     def __exit__(self, *exc_args: object) -> None:
         self.close()
-
-    @property
-    def closed(self) -> bool:
-        """This is True if `close()` has been called, otherwise False."""
-        return self._waiters is None
-
-    def empty(self) -> bool:
-        """Return True if `get_nowait()` would raise an exception.
-
-        This is the case when there's currently no task blocked on
-        `put()`. Note that a queue starts out as empty and `full()` at
-        the same time.
-
-        Example:
-
-            >>> import asyncio
-            ...
-            >>> async def runner():
-            ...     queue = RendezVousQueue()
-            ...     for i in range(1, 4):
-            ...         asyncio.create_task(queue.put(i))
-            ...
-            ...     await asyncio.sleep(0)
-            ...     received = []
-            ...     while not queue.empty():
-            ...         received.append(queue.get_nowait())
-            ...     return sorted(received)
-            ...
-            >>> asyncio.run(runner())
-            [1, 2, 3]
-        """
-        return self._waiters is None or not _has_putters(self._waiters)
-
-    def full(self) -> bool:
-        """Return True if `put_nowait()` would raise an exception.
-
-        This is the case when there's currently no task blocked on
-        `get()`. Note that a queue starts out as empty and `full()` at
-        the same time.
-
-        Example:
-
-            >>> import asyncio
-            ...
-            >>> async def runner():
-            ...     queue = RendezVousQueue()
-            ...     tasks = [
-            ...         asyncio.create_task(queue.get()) for _ in range(3)
-            ...     ]
-            ...     await asyncio.sleep(0)
-            ...     while not queue.full():
-            ...         queue.put_nowait(None)
-            ...     return await asyncio.gather(*tasks)
-            ...
-            >>> asyncio.run(runner())
-            [None, None, None]
-        """
-        return self._waiters is None or not _has_getters(self._waiters)
 
     async def get(self) -> ItemT:
         """Synchronize with a `put()` and return its item.
@@ -303,21 +269,27 @@ class RendezVousQueue(Generic[ItemT]):
                 return
         raise QueueFull()
 
+    @property
+    def closed(self) -> bool:
+        """True if `close()` has been called, otherwise False."""
+        return self._waiters is None
+
     def close(self) -> None:
         """Close the queue, preventing all further interactions.
 
-        Because rendez-vous queues don't buffer their items, any task
-        blocked when it is closed will immediately raise a
-        `~asyncio.CancelledError`.
+        Rendez-vous queues don't buffer their items, so all tasks that
+        are blocked when ``close()`` is called will immediately raise
+        a `~asyncio.CancelledError`.
 
-        Calling this method a second time does nothing.
+        This method is idempotent: calling it a second time does
+        nothing.
 
         Example:
 
             >>> import asyncio
             ...
             >>> async def runner():
-            ...     queue = RendezVousQueue()
+            ...     queue = RendezvousQueue()
             ...     task = asyncio.create_task(queue.put(1))
             ...     await asyncio.sleep(0)
             ...     assert not task.done()
@@ -339,3 +311,64 @@ class RendezVousQueue(Generic[ItemT]):
         waiters = cast(Deque[_Putter[ItemT]], waiters)
         for _, putter in waiters:
             putter.cancel("queue has been closed")
+
+    def empty(self) -> bool:
+        """Return True if `get_nowait()` would raise an exception.
+
+        This is the case when there's currently no task blocked on
+        `put()`. Note that after initialization, a queue starts out
+        empty and `full()` at the same time.
+
+        Example:
+
+            >>> import asyncio
+            ...
+            >>> async def runner():
+            ...     queue = RendezvousQueue()
+            ...     for i in range(1, 4):
+            ...         asyncio.create_task(queue.put(i))
+            ...
+            ...     await asyncio.sleep(0)
+            ...     received = []
+            ...     while not queue.empty():
+            ...         received.append(queue.get_nowait())
+            ...     return sorted(received)
+            ...
+            >>> asyncio.run(runner())
+            [1, 2, 3]
+        """
+        return self._waiters is None or not _has_putters(self._waiters)
+
+    def full(self) -> bool:
+        """Return True if `put_nowait()` would raise an exception.
+
+        This is the case when there's currently no task blocked on
+        `get()`. Note that after initialization, a queue starts out
+        `empty()` and full at the same time.
+
+        Example:
+
+            >>> import asyncio
+            ...
+            >>> async def runner():
+            ...     queue = RendezvousQueue()
+            ...     tasks = [
+            ...         asyncio.create_task(queue.get()) for _ in range(3)
+            ...     ]
+            ...     await asyncio.sleep(0)
+            ...     while not queue.full():
+            ...         queue.put_nowait(None)
+            ...     return await asyncio.gather(*tasks)
+            ...
+            >>> asyncio.run(runner())
+            [None, None, None]
+        """
+        return self._waiters is None or not _has_getters(self._waiters)
+
+
+class QueueEmpty(Exception):
+    """No sender was waiting for `~.RendezvousQueue.get_nowait()`."""
+
+
+class QueueFull(Exception):
+    """No receiver was waiting for `~.RendezvousQueue.put_nowait()`."""

@@ -1,4 +1,4 @@
-"""Tests for `RendezVousQueue`."""
+"""Tests for `RendezvousQueue`."""
 
 import asyncio
 import random
@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from cernml.evert.rendezvous import QueueEmpty, QueueFull, RendezVousQueue
+from cernml.evert.rendezvous import QueueEmpty, QueueFull, RendezvousQueue
 
 
 @contextmanager
@@ -38,46 +38,46 @@ async def yield_to_other_tasks() -> None:
 
 
 async def test_context_manager() -> None:
-    with RendezVousQueue[t.Any]() as queue:
+    with RendezvousQueue[t.Any]() as queue:
         assert not queue.closed
     assert queue.closed
 
 
 async def test_default_is_empty_and_full() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     assert queue.empty() and queue.full()
 
 
 async def test_empty_after_get() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     with autocancel_task(queue.get()):
         await yield_to_other_tasks()
         assert queue.empty()
 
 
 async def test_not_empty_after_put() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     with autocancel_task(queue.put(object())):
         await yield_to_other_tasks()
         assert not queue.empty()
 
 
 async def test_not_full_after_get() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     with autocancel_task(queue.get()):
         await yield_to_other_tasks()
         assert not queue.full()
 
 
 async def test_full_after_put() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     with autocancel_task(queue.put(object())):
         await yield_to_other_tasks()
         assert queue.full()
 
 
 async def test_get_nowait() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     sent = object()
     task = asyncio.create_task(queue.put(sent))
     with pytest.raises(QueueEmpty):
@@ -91,7 +91,7 @@ async def test_get_nowait() -> None:
 
 
 async def test_put_nowait() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     sent = object()
     task = asyncio.create_task(queue.get())
     with pytest.raises(QueueFull):
@@ -105,7 +105,7 @@ async def test_put_nowait() -> None:
 
 
 async def test_put_get() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     sent = object()
     received, none = await asyncio.gather(queue.get(), queue.put(sent))
     assert none is None
@@ -113,7 +113,7 @@ async def test_put_get() -> None:
 
 
 async def test_get_after_cancelled_put() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     putter = asyncio.create_task(queue.put(False))
     await yield_to_other_tasks()
     putter.cancel()
@@ -123,7 +123,7 @@ async def test_get_after_cancelled_put() -> None:
 
 
 async def test_put_after_cancelled_get() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     getter = asyncio.create_task(queue.get())
     await yield_to_other_tasks()
     getter.cancel()
@@ -133,7 +133,7 @@ async def test_put_after_cancelled_get() -> None:
 
 
 async def test_many_puts_before_get() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     items = [object() for _ in range(100)]
     tasks = [asyncio.create_task(queue.put(i)) for i in items]
     await yield_to_other_tasks()
@@ -144,7 +144,7 @@ async def test_many_puts_before_get() -> None:
 
 
 async def test_many_gets_before_put() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     items = [object() for _ in range(100)]
     tasks = [asyncio.create_task(queue.get()) for _ in range(len(items))]
     await yield_to_other_tasks()
@@ -156,7 +156,7 @@ async def test_many_gets_before_put() -> None:
 
 
 async def test_close_after_get() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     tasks = [asyncio.create_task(queue.get() if i else queue.put(i)) for i in range(4)]
     await yield_to_other_tasks()
     queue.close()
@@ -167,7 +167,7 @@ async def test_close_after_get() -> None:
 
 
 async def test_close_after_put() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     tasks = [asyncio.create_task(queue.put(i) if i else queue.get()) for i in range(4)]
     await yield_to_other_tasks()
     queue.close()
@@ -178,7 +178,7 @@ async def test_close_after_put() -> None:
 
 
 async def test_state_after_close() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
     queue.close()
     assert queue.empty() and queue.full()
     with pytest.raises(asyncio.CancelledError):
@@ -194,7 +194,7 @@ async def test_state_after_close() -> None:
 
 @pytest.mark.slow
 async def test_free_for_all() -> None:
-    queue = RendezVousQueue[t.Any]()
+    queue = RendezvousQueue[t.Any]()
 
     async def putter(item: object) -> None:
         await asyncio.sleep(random.random())

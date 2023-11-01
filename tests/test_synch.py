@@ -173,11 +173,11 @@ def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
     # Then:
     assert exc_info.value is fg_error
     bg_record, fg_record = caplog.records
-    assert bg_record.name == "cernml.evert._async.SolveThread"
+    assert bg_record.name == "cernml.evert.asynch.SolveThread"
     assert bg_record.getMessage() == "exiting due to exception"
     assert bg_record.exc_info
     assert bg_record.exc_info[1] is bg_error
-    assert fg_record.name == "cernml.evert._sync.Eversion"
+    assert fg_record.name == "cernml.evert.synch.Eversion"
     assert fg_record.getMessage() == "an exception occurred in the background thread"
     assert fg_record.exc_info
     assert fg_record.exc_info[1] is bg_error

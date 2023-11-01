@@ -65,7 +65,7 @@ profile = 'black'
 addopts = '--doctest-modules'
 testpaths = ['src', 'tests']
 asyncio_mode = 'auto'
-doctest_optionflags = ['IGNORE_EXCEPTION_DETAIL']
+doctest_optionflags = ['ELLIPSIS']
 markers = [
     'slow: marks tests as slow (deselect with `-m "not slow"`)'
 ]

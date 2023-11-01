@@ -1,12 +1,11 @@
 """Synchronous, blocking version of the Eversion API.
 
-This implementation is based on the asynchronous version and simply
-blocks while waiting for the background thread.
-
-If you run asynchronous code yourself, keep in mind that this
-necessarily means that entering an eversion context will manipulate the
-global event loop. If you don't run any asynchronous code, there is
-nothing you need to worry about.
+Many optimization routines are implemented as a function called *solve*
+that takes a callback function *objective* and an initial argument *x0*.
+The *solve* function then runs a loop, potentially for a long time, and
+calls *objective* repeatedly until it has calculated a result.
+Because *solve* seizes the *control flow*, its caller is stuck waiting
+for however long it takes and cannot do anything else.
 
 Example:
 
@@ -37,6 +36,13 @@ Example:
     solve received: result 3
     solve finished
     main received: final result
+
+.. note::
+    This API uses :doc:`asynch` behind the scenes. If you run any
+    asynchronous code yourself, keep in mind that entering the eversion
+    context via :keyword:`with` will necessarily manipulate the global
+    event loop. If you don't run any asynchronous code, there is nothing
+    you need to worry about.
 """
 
 from __future__ import annotations
@@ -69,6 +75,22 @@ __all__ = [
 CancelledError = asyncio.CancelledError
 
 
+@t.overload
+def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
+    ...
+
+
+@t.overload
+def evert(
+    solve: SolveFunc[Params, Loss, OptResult],
+    x0: Params,
+    *,
+    debug: t.Optional[bool] = None,
+    loop_factory: t.Optional[t.Callable[[], asyncio.AbstractEventLoop]] = None,
+) -> Eversion:
+    ...
+
+
 def evert(
     solve: SolveFunc[Params, Loss, OptResult],
     x0: Params,
@@ -93,11 +115,10 @@ def evert(
             function. Most numerical optimization algorithms will pass
             this directly to the first call to the objective.
         debug: if True, run the internal event loop in debug mode. If
-            False, disable debug mode. If None (the default), respect
-            the global debug settings.
-        loop_factory: if passed and not None, use this to create an
-            event loop that drives communication with the everted
-            function's thread.
+            False, disable debug mode. If not passed, respect the global
+            debug settings.
+        loop_factory: if passed, use this to create an event loop that
+            drives communication with the everted function's thread.
     """
     return Eversion(solve, x0, debug=debug, loop_factory=loop_factory)
 
@@ -139,40 +160,6 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         finally:
             self._runner.__exit__(exc_type, exc_val, exc_tb)
             self._closed = True
-
-    def cancel(self) -> None:
-        """Cancel the execution of the everted function.
-
-        Note that this merely schedules an exception to be raised within
-        the background thread that runs the function. To ensure that it
-        has properly shut down, you have to `join()` and catch the
-        resulting `CancelledError`.
-        """
-        return self._inner.cancel()
-
-    def join(self) -> OptResult:
-        """Await termination of the everted function.
-
-        If the function isn't done yet, it is cancelled. The return
-        value is that of the everted function if it was successful.
-
-        If the everted function raised any exception, it is re-raised by
-        this method.
-
-        If the everted function was not finished yet,
-        `asyncio.CancelledError` is raised.
-        """
-        if self._closed:
-            # Can't use runner anymore, side-step it so that `OptResult`
-            # remains available after the with block. This will never
-            # deadlock, but produce CancelledError at worst.
-            awaitable = self._inner.join().__await__()
-            try:
-                while True:
-                    next(awaitable)
-            except StopIteration as stop:
-                return stop.value
-        return self._runner.run(self._inner.join())
 
     def ask(self) -> Params:
         """Progress the everted function by asking for the next callback.
@@ -220,7 +207,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         """Alternative API based on generator functions.
 
         This function returns an :term:`generator`. It combines calls to
-        `ask()` and `tell()` in a single function `gen.send()`.
+        `ask()` and `tell()` in a single function ``gen.send()``.
 
         To receive the first set of callback arguments, call either
         ``next(gen)`` or ``gen.send(None)``.
@@ -249,6 +236,40 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         result = self.join()
         self._logger.info("Result: %s", result)
         return result
+
+    def cancel(self) -> None:
+        """Cancel the execution of the everted function.
+
+        Note that this merely schedules an exception to be raised within
+        the background thread that runs the function. To ensure that it
+        has properly shut down, you have to `join()` and catch the
+        resulting `~asyncio.CancelledError`.
+        """
+        return self._inner.cancel()
+
+    def join(self) -> OptResult:
+        """Await termination of the everted function.
+
+        If the function isn't done yet, it is cancelled. The return
+        value is that of the everted function if it was successful.
+
+        If the everted function raised any exception, it is re-raised by
+        this method.
+
+        If the everted function was not finished yet,
+        `asyncio.CancelledError` is raised.
+        """
+        if self._closed:
+            # Can't use runner anymore, side-step it so that `OptResult`
+            # remains available after the with block. This will never
+            # deadlock, but produce CancelledError at worst.
+            awaitable = self._inner.join().__await__()
+            try:
+                while True:
+                    next(awaitable)
+            except StopIteration as stop:
+                return stop.value
+        return self._runner.run(self._inner.join())
 
     def set_logger(self, logger: logging.Logger) -> None:
         """Replace the logger used internally by this class."""

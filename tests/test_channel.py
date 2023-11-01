@@ -49,7 +49,9 @@ async def test_not_empty_if_receiving() -> None:
     async def sender(conn: Connection[int, int]) -> None:
         await conn.put(1)
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(sender(send)) as task:
         await yield_to_other_tasks()  # wait for put() to start waiting
         assert not recv.empty()
@@ -62,7 +64,9 @@ async def test_not_full_if_receiving() -> None:
     async def receiver(conn: Connection[int, int]) -> None:
         assert await conn.get() == 1
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(receiver(recv)) as task:
         await yield_to_other_tasks()  # wait for get() to start waiting
         assert not send.full()
@@ -75,7 +79,9 @@ async def test_getting_while_getting() -> None:
     async def receiver(conn: Connection[int, int]) -> None:
         await conn.get()
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(receiver(recv)):
         await yield_to_other_tasks()  # wait for get() to start waiting
         with pytest.raises(QueueEmpty):
@@ -86,7 +92,9 @@ async def test_putting_while_putting() -> None:
     async def sender(conn: Connection[int, int]) -> None:
         await conn.put(1)
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(sender(send)):
         await yield_to_other_tasks()  # wait for put() to start waiting
         with pytest.raises(QueueFull):
@@ -95,9 +103,10 @@ async def test_putting_while_putting() -> None:
 
 async def test_close_closes_both_queues(monkeypatch: pytest.MonkeyPatch) -> None:
     close = Mock(name="close")
-    monkeypatch.setattr("cernml.evert.channel.RendezVousQueue.close", close)
+    monkeypatch.setattr("cernml.evert.channel.RendezvousQueue.close", close)
     for i in range(2):
-        conns = channel(int, int)
+        conns: t.Tuple[Connection[int, int], Connection[int, int]]
+        conns = channel()
         conn = conns[i]
         # Location is important because the Connection finalizer also
         # calls `close()`
@@ -111,7 +120,9 @@ async def test_dropping_sender_closes() -> None:
     async def sender(conn: Connection[int, int]) -> None:
         await conn.put(1)
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(sender(send)) as task:
         del send
         task.cancel()
@@ -130,7 +141,9 @@ async def test_dropping_receiver_closes() -> None:
     async def receiver(conn: Connection[int, int]) -> None:
         await conn.get()
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(receiver(recv)) as task:
         del recv
         task.cancel()
@@ -150,7 +163,9 @@ async def test_context_manager() -> None:
         with conn:
             pass
 
-    send, recv = channel(int, int)
+    send: Connection[int, int]
+    recv: Connection[int, int]
+    send, recv = channel()
     with autocancel_task(task(recv)) as t:
         await t
     assert send.closed

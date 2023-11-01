@@ -1,11 +1,8 @@
 """Asynchronous version of the Eversion API.
 
-This is implemented using `asyncio` and a background thread.
-Communicating with the other thread requires waiting, which allows the
-foreground thread to do other work while waiting for the background
-thread.
-
-Example:
+Unlike the blocking API in `cernml.evert.synch`, this API able to
+perform other tasks while waiting for new results. It is best used when
+integrating with other asynchronous APIs, e.g. `pyda.AsyncIOClient`.
 
     >>> def solve(objective, x0):
     ...     x = x0
@@ -36,6 +33,57 @@ Example:
     solve received: result 3
     solve finished
     main received: final result
+
+The everted function is an :term:`asynchronous context manager`. You can
+use it in an :keyword:`async with` block to ensure that the background
+thread is always driven to completion:
+
+    >>> async def main():
+    ...     # `async with` will raise CancelledError if you leave it
+    ...     # before `solve()` has completed.
+    ...     async with evert(solve, "args 0") as ev:
+    ...         await ev.ask()
+    ...
+    >>> asyncio.run(main())
+    Traceback (most recent call last):
+    ...
+    asyncio...CancelledError
+
+    >>> def solve(objective, x0):
+    ...     # Type error in the solver:
+    ...     loss = objective(x0)
+    ...     return 1 + loss
+    ...
+    >>> async def main():
+    ...     # If `solve()` raises an exception, `async with` will
+    ...     # re-raise it when you leave its context.
+    ...     async with evert(solve, "args 0") as ev:
+    ...         await ev.ask()
+    ...         await ev.tell("not a number")
+    ...
+    >>> asyncio.run(main())
+    Traceback (most recent call last):
+    ...
+    TypeError: unsupported operand type(s) for +: 'int' and 'str'
+
+    >>> def solve(objective, x0):
+    ...     return x0
+    ...
+    >>> async def main():
+    ...     # If `OptFinished` is raised, `async with` will catch
+    ...     # it. The result remains available via `join()`.
+    ...     async with evert(solve, "args via join") as ev:
+    ...         await ev.ask()
+    ...     return await ev.join()
+    ...
+    >>> asyncio.run(main())
+    'args via join'
+
+.. note::
+    Eversion is implemented using `asyncio` and a background thread.
+    Communication with the background thread uses :doc:`channel` and
+    requires waiting, which allows the foreground thread to do other
+    work while waiting for the background thread.
 """
 
 from __future__ import annotations
@@ -78,9 +126,9 @@ def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
     a result. This includes most numerical optimization algorithms.
 
     The returned `Eversion` object has methods `~Eversion.ask()` and
-    `~Eversion.tell()` that manually progress the state machine inside
-    *solve*, meaning that you can run it without yielding the control
-    flow.
+    `~Eversion.tell()` that progress the state machine inside *solve*
+    step by step, meaning that you can execute it without yielding the
+    control flow.
     """
     return Eversion(solve, x0)
 
@@ -146,44 +194,6 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
             return ours
         return vars(self)["_conn"]
 
-    def cancel(self) -> None:
-        """Cancel the execution of the everted function.
-
-        If the everted function has already terminated this does nothing.
-
-        Note that this merely schedules an exception to be raised within
-        the background thread that runs the function. To ensure that it
-        has properly shut down, you have to `join()` and catch the
-        resulting `~asyncio.CancelledError`.
-        """
-        if isinstance(self._worker, _BackgroundWorker):
-            self._logger.debug("Canceling background thread …")
-            self._conn.close()
-        elif self._worker is not None:
-            self._logger.debug("Canceling to prevent background thread from starting …")
-            # Ensure that worker won't get started later.
-            self._worker = None
-
-    async def join(self) -> OptResult:
-        """Await termination of the everted function.
-
-        If the function isn't done yet, it is cancelled. The return
-        value is that of the everted function if it was successful.
-
-        If the everted function raised any exception, it is re-raised by
-        this method.
-
-        If the everted function was not finished yet,
-        `asyncio.CancelledError` is raised.
-        """
-        # If worker hadn't started yet, `cancel()` will make it
-        # unstartable.
-        self.cancel()
-        if inspect.isawaitable(self._worker):
-            self._logger.debug("Joining thread …")
-            return await self._worker
-        raise asyncio.CancelledError("solve() never started")
-
     async def _join_ignore_exceptions(self) -> None:
         """Helper function to `ask()` and `get()`.
 
@@ -199,18 +209,18 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         """Progress the everted function by asking for the next callback.
 
         This should be called first and after every call to `tell()`. If
-        the function has not finished yet, it will call its callback
-        again. This will deliver a new set of parameters for us to
-        evaluate.
+        *solve* has not finished yet, it will call its `.Objective`
+        callback function. This will send us a new set of parameters for
+        us to evaluate.
 
-        This method propagates any exception that terminates the everted
-        function. It may furthermore raise the following exceptions.
+        This method propagates any exception that terminates *solve*. It
+        may furthermore raise the following exceptions.
 
         Raises:
-            `OptFinished`: if the everted function has terminated
-                instead of calling back. The exception has an attribute
-                *result* that contains the return value.
-            `RuntimeError`: if you call this method when you were
+            `OptFinished`: if *solve* has completed and returned some value.
+                The exception has an attribute *result* that contains
+                the return value.
+            `MethodOrderError`: if you call this method when you were
                 expected to call `tell()` instead.
         """
         try:
@@ -234,20 +244,20 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         """Progress the everted function by finishing its callback.
 
         This should be called after every call to `ask()`. The argument
-        is passed back as the return value of the callback that the
-        everted function uses.
+        is passed back as the return value of the `.Objective` callback
+        function that was called by *solve*.
 
         After this, you're expected to call `ask()` again to wait for
         the next callback.
 
-        This method propagates any exception that terminates the everted
-        function. It may furthermore raise the following exceptions.
+        This method propagates any exception that terminates *solve*. It
+        may furthermore raise the following exceptions.
 
         Raises:
-            `OptFinished`: if the everted function has terminated
-                instead of calling back. This can only happen if `ask()`
-                has previously also raised this exception.
-            `RuntimeError`: if you call this method when you were
+            `OptFinished`: if *solve* has completed and returned some
+                value. This can only happen if `ask()` has previously
+                also raised this exception.
+            `MethodOrderError`: if you call this method when you were
                 expected to call `ask()` instead.
         """
         self._logger.debug("Put loss: %s", loss)
@@ -270,16 +280,43 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
 
         This function returns an :term:`asynchronous generator`. It
         combines calls to `ask()` and `tell()` in a single function
-        `agen.asend()`.
-
-        To receive the first set of callback arguments, call either
-        ``await anext(agen)`` (Python 3.10+) or ``await
-        agent.__anext__()`` (until Python 3.9) or ``await
+        ``agen.asend()``. To receive the first set of callback
+        arguments, call either ``await anext(agen)`` (Python 3.10+) or
+        ``await agen.__anext__()`` (until Python 3.9) or ``await
         agen.asend(None)`` (all versions).
 
-        Note that generators terminate execution by raises
-        `StopAsyncIteration` instead of `OptFinished`. To receive the
-        final return value of the everted function, await `join()`.
+        Note that generators terminate by raising `StopAsyncIteration`
+        instead of `.OptFinished`. To receive the return value of
+        *solve*, await `join()`.
+
+        Example:
+
+            >>> from numpy.polynomial import Polynomial
+            ...
+            >>> def solve(objective, x0):
+            ...     y0 = objective(x0)
+            ...     x1 = x0 + 1
+            ...     y1 = objective(x1)
+            ...     x2 = x0 - 1
+            ...     y2 = objective(x2)
+            ...     p = Polynomial.fit([x0, x1, x2], [y0, y1, y2], 2)
+            ...     [extremum] = p.deriv().roots()
+            ...     return extremum
+            ...
+            >>> async def main():
+            ...     try:
+            ...         async with evert(solve, 4) as ev:
+            ...             agen = ev.as_generator()
+            ...             y = None
+            ...             while True:
+            ...                 x = await agen.asend(y)
+            ...                 y = 3 * x**2 - 6*x + 1
+            ...     except StopAsyncIteration:
+            ...         res = await ev.join()
+            ...         print(f"Quadratic extremum at x = {res:.3f}")
+            ...
+            >>> asyncio.run(main())
+            Quadratic extremum at x = 1.000
         """
         try:
             i = 0
@@ -292,6 +329,50 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
                 await self.tell(loss)
         except OptFinished:
             return
+
+    def cancel(self) -> None:
+        """Cancel the execution of *solve*.
+
+        If *solve* has already completed this does nothing. If you call
+        ``cancel()`` before entering an :keyword:`async with` context or
+        calling `ask()`, *solve* is not called at all.
+
+        .. note::
+            Usually, this only schedules an exception to be raised
+            within the background thread that runs *solve*. To ensure
+            that it has shut down, await `join()` and catch the
+            resulting `~asyncio.CancelledError`.
+        """
+        if isinstance(self._worker, _BackgroundWorker):
+            self._logger.debug("Canceling background thread …")
+            self._conn.close()
+        elif self._worker is not None:
+            self._logger.debug("Canceling to prevent background thread from starting …")
+            # Ensure that worker won't get started later.
+            self._worker = None
+
+    async def join(self) -> OptResult:
+        """Await completion of *solve*.
+
+        If *solve* has not completed yet, it is cancelled. The return
+        value of ``join()`` is that of *solve* if it completed
+        successfully.
+
+        If *solve* raised any exception, ``join()`` re-raises it.
+
+        If *solve* was not completed yet, ``join()`` raises
+        `asyncio.CancelledError`.
+
+        This method is idempotent: calling it a second time does nothing
+        and returns the same value or raises the same exception.
+        """
+        # If worker hadn't started yet, `cancel()` will make it
+        # unstartable.
+        self.cancel()
+        if inspect.isawaitable(self._worker):
+            self._logger.debug("Joining thread …")
+            return await self._worker
+        raise asyncio.CancelledError("solve() never started")
 
     def set_logger(self, logger: logging.Logger) -> None:
         """Replace the logger used internally by this class."""
