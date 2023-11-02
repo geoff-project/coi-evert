@@ -1,60 +1,80 @@
 #!/usr/bin/env python3
 
+"""Simple show-case of how evert() fits into the CernML ecosystem.
+
+This creates a `cernml.coi.SingleOptimizable` and
+a `cernml.optimizers.Optimizer`. It combines them into a single *solve*
+function and then runs this function twice: once normally, once everted.
+"""
+
 import logging
 
-import gym.spaces
 import numpy as np
+from gym.spaces import Box
+from numpy.typing import NDArray
 
 from cernml import coi
-from cernml.optimizers.scipy import Cobyla
-from cernml.evert import Loss, Objective, Params, evert
+from cernml.evert import OptFinished, evert
+from cernml.optimizers import Optimizer, OptimizeResult, make, make_solve_func
 
 
 class ParabolaEnv(coi.SingleOptimizable):
-    def __init__(self) -> None:
-        self.optimization_space = gym.spaces.Box(-1, 1, shape=(2,), dtype=float)
+    """A trivial quadratic 2D function."""
 
-    def get_initial_params(self) -> Params:
+    def __init__(self) -> None:
+        self.optimization_space = Box(-1, 1, shape=(2,), dtype=np.double)
+
+    def get_initial_params(self) -> NDArray[np.double]:
         return self.optimization_space.sample()
 
-    def compute_single_objective(self, params: Params) -> Loss:
+    def compute_single_objective(self, params: NDArray[np.double]) -> float:
         return float(np.linalg.norm(params))
 
 
-def run_normal(opt: Cobyla, env: ParabolaEnv) -> Params:
-    bounds = env.optimization_space.low, env.optimization_space.high
-    solve = opt.make_solve_func(bounds, env.constraints)
+def run_normal(opt: Optimizer, env: ParabolaEnv) -> OptimizeResult:
+    """Solve the problem with normal control flow.
+
+    We enter the solve function and do not leave it until it is
+    completed. On every iteration, it calls into
+    `compute_single_objective()` with new arguments.
+    """
+    solve = make_solve_func(opt, env)
     result = solve(env.compute_single_objective, env.get_initial_params())
-    return result.x
+    return result
 
 
-def run_everted(opt: Cobyla, env: ParabolaEnv) -> Params:
-    bounds = env.optimization_space.low, env.optimization_space.high
-    solve = opt.make_solve_func(bounds, env.constraints)
+def run_everted(opt: Optimizer, env: ParabolaEnv) -> OptimizeResult:
+    """Solve the problem with everted control flow.
 
-    def _solve_wrapper(obj: Objective, x_0: Params) -> Params:
-        result = solve(obj, x_0)
-        return result.x
+    We never enter the solve function and instead keep the control flow
+    to ourselves. Instead, the everted solve function acts like a state
+    machine that we query for a new set of arguments and feed with the
+    resulting cost value calculated via `compute_single_objective()`.
 
-    eversion = evert(_solve_wrapper, env.get_initial_params())
+    Eventually, the state machine terminates by raising an `OptFinished`
+    exception, from which we retrieve the result. Alternatively, we
+    could've also used a `with` block and explicit ``eversion.join()``.
+    """
+    solve = make_solve_func(opt, env)
     try:
+        eversion = evert(solve, env.get_initial_params())
         while True:
             params = eversion.ask()
             eversion.tell(env.compute_single_objective(params))
-    except StopIteration as exc:
-        [res] = exc.args
-        return res
+    except OptFinished as finished:
+        return finished.result
 
 
 def main() -> None:
-    logging.basicConfig(level="INFO")
-    opt = Cobyla()
+    """Main function."""
+    logging.basicConfig(level="DEBUG")
+    opt = make("COBYLA")
     env = ParabolaEnv()
-    optimum = run_everted(opt, env)
-    print(
-        f"f({', '.join(format(f, '.3g') for f in optimum)}) =",
-        f"{env.compute_single_objective(optimum):.3g}",
-    )
+    for func in run_normal, run_everted:
+        result = func(opt, env)
+        print(
+            f"f({', '.join(format(f, '.3g') for f in result.x)}) = {result.fun:.3g}",
+        )
 
 
 if __name__ == "__main__":

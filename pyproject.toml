@@ -60,6 +60,7 @@ target-version = ['py37', 'py38', 'py39']
 
 [tool.isort]
 profile = 'black'
+known_first_party = ['cernml']
 
 [tool.pytest.ini_options]
 addopts = '--doctest-modules'
