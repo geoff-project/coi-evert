@@ -140,3 +140,116 @@ async def test_tell_after_success() -> None:
     with pytest.raises(OptFinished) as exc_info:
         await eversion.tell(mock.Mock(name="wrong loss"))
     assert exc_info.value.result == loss
+
+
+async def test_exit_lets_cancelled_error_pass() -> None:
+    def solve_side_effect(obj: t.Callable[[...], t.Any], x0: t.Any) -> t.Any:
+        obj(x0)
+        return mock.DEFAULT
+
+    # Given:
+    solve = mock.Mock(name="solve")
+    solve.side_effect = solve_side_effect
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(asyncio.CancelledError, match="^$"):
+        async with evert(solve, x0):
+            pass
+    # Then:
+    solve.assert_called_once_with(mock.ANY, x0)
+
+
+async def test_ask_reraises_exception() -> None:
+    # Given:
+    error = Exception()
+    solve = mock.Mock(name="solve")
+    solve.side_effect = error
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(Exception) as exc_info:
+        async with evert(solve, x0) as eversion:
+            await eversion.ask()
+    # Then:
+    solve.assert_called_once_with(mock.ANY, x0)
+    assert exc_info.value is error
+
+
+async def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
+    # Given:
+    bg_error = Exception("bg_error")
+    fg_error = Exception("fg_error")
+    solve = mock.Mock(name="solve")
+    solve.side_effect = bg_error
+    x0 = mock.Mock(name="x0")
+    # When:
+    with caplog.at_level("ERROR"):
+        with pytest.raises(Exception) as exc_info:
+            async with evert(solve, x0):
+                raise fg_error
+    # Then:
+    assert exc_info.value is fg_error
+    bg_record, fg_record = caplog.records
+    assert bg_record.name == "cernml.evert.asynch.SolveThread"
+    assert bg_record.getMessage() == "exiting due to exception"
+    assert bg_record.exc_info
+    assert bg_record.exc_info[1] is bg_error
+    assert fg_record.name == "cernml.evert.asynch.Eversion"
+    assert fg_record.getMessage() == "an exception occurred in the background thread"
+    assert fg_record.exc_info
+    assert fg_record.exc_info[1] is bg_error
+    assert fg_record.exc_info[1].__suppress_context__
+
+
+async def test_exit_reraises_bg_exception() -> None:
+    # Given:
+    ctx_error = Exception("ctx_error")
+    bg_error = Exception("bg_error")
+    bg_error.__context__ = ctx_error
+    solve = mock.Mock(name="solve")
+    solve.side_effect = bg_error
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(Exception) as exc_info:
+        async with evert(solve, x0):
+            pass
+    # Then:
+    assert exc_info.value is bg_error
+    assert exc_info.value.__context__ is ctx_error
+    assert not exc_info.value.__suppress_context__
+
+
+async def test_exit_does_not_suppress_cancelled_error() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    solve.side_effect = lambda obj, x0: obj(x0)
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(asyncio.CancelledError):
+        async with evert(solve, x0) as eversion:
+            await eversion.join()
+    # Then:
+    solve.assert_called_once_with(mock.ANY, x0)
+
+
+async def test_exit_suppresses_opt_finished() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    x0 = mock.Mock(name="x0")
+    # When:
+    async with evert(solve, x0) as eversion:
+        await eversion.join()
+    # Then:
+    solve.assert_called_once_with(mock.ANY, x0)
+    assert (await eversion.join()) == solve.return_value
+
+
+async def test_exit_suppresses_only_own_opt_finished() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(OptFinished):
+        async with evert(solve, x0):
+            # Then:
+            # `with evert` must not capture this exception:
+            await evert(solve, x0).ask()

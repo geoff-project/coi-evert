@@ -126,29 +126,19 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
 
     def __exit__(
         self,
-        exc_type: t.Optional[type[BaseException]],
+        exc_type: t.Optional[t.Type[BaseException]],
         exc_val: t.Optional[BaseException],
         exc_tb: t.Optional[TracebackType],
-    ) -> None:
-        # pylint: disable=broad-exception-caught
+    ) -> bool:
         try:
-            self._runner.run(self._inner.__aexit__(exc_type, exc_val, exc_tb))
+            return self._runner.run(self._inner.__aexit__(exc_type, exc_val, exc_tb))
         except asyncio.CancelledError:
             # The worker didn't terminate, e.g. because we lost
             # interest. This is expected behavior.
-            pass
-        except (MethodOrderError, Exception) as exc:
-            # The context always gets overwritten with `exc_val`, so we
-            # might as well ignore is.
-            exc.__suppress_context__ = True
-            # Logging is enough; if the exception were interesting, it
-            # would've already been re-raised in the main thread via
-            # `ask()` or `tell()`.
-            self._logger.exception(
-                "an exception occurred in the background thread", exc_info=exc
-            )
-        self._runner.__exit__(exc_type, exc_val, exc_tb)
-        self._closed = True
+            return False
+        finally:
+            self._runner.__exit__(exc_type, exc_val, exc_tb)
+            self._closed = True
 
     def cancel(self) -> None:
         """Cancel the execution of the everted function.

@@ -182,3 +182,58 @@ def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
     assert fg_record.exc_info
     assert fg_record.exc_info[1] is bg_error
     assert fg_record.exc_info[1].__suppress_context__
+
+
+def test_exit_reraises_bg_exception() -> None:
+    # Given:
+    ctx_error = Exception("ctx_error")
+    bg_error = Exception("bg_error")
+    bg_error.__context__ = ctx_error
+    solve = mock.Mock(name="solve")
+    solve.side_effect = bg_error
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(Exception) as exc_info:
+        with evert(solve, x0):
+            pass
+    # Then:
+    assert exc_info.value is bg_error
+    assert exc_info.value.__context__ is ctx_error
+    assert not exc_info.value.__suppress_context__
+
+
+def test_exit_does_not_suppress_cancelled_error() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    solve.side_effect = lambda obj, x0: obj(x0)
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(CancelledError):
+        with evert(solve, x0) as eversion:
+            eversion.join()
+    # Then:
+    solve.assert_called_once_with(mock.ANY, x0)
+
+
+def test_exit_suppresses_opt_finished() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    x0 = mock.Mock(name="x0")
+    # When:
+    with evert(solve, x0) as eversion:
+        eversion.join()
+    # Then:
+    solve.assert_called_once_with(mock.ANY, x0)
+    assert eversion.join() == solve.return_value
+
+
+def test_exit_suppresses_only_own_opt_finished() -> None:
+    # Given:
+    solve = mock.Mock(name="solve")
+    x0 = mock.Mock(name="x0")
+    # When:
+    with pytest.raises(OptFinished):
+        with evert(solve, x0):
+            # Then:
+            # `with evert` must not capture this exception:
+            evert(solve, x0).ask()

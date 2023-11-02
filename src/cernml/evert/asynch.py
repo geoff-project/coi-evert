@@ -46,6 +46,7 @@ import inspect
 import logging
 import sys
 import typing as t
+from types import TracebackType
 
 from ._types import Loss, MethodOrderError, OptFinished, OptResult, Params, SolveFunc
 from .channel import Connection, channel
@@ -100,8 +101,31 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         _ = self._conn
         return self
 
-    async def __aexit__(self, *exc_args: object) -> None:
-        await self.join()
+    async def __aexit__(
+        self,
+        exc_type: t.Optional[t.Type[BaseException]],
+        exc_val: t.Optional[BaseException],
+        exc_tb: t.Optional[TracebackType],
+    ) -> bool:
+        # pylint: disable=broad-exception-caught
+        try:
+            await self.join()
+        except (MethodOrderError, Exception) as exc:
+            # Reraise the exception if there's no other exception in
+            # flight.
+            if exc_val is None:
+                raise
+            # If an exception is already in flight, it has already
+            # overwritten the __context__ of `exc`, so we may as well
+            # ignore i.
+            exc.__suppress_context__ = True
+            # If an exception is coming through, just log this one.
+            # Otherwise, there are too many exceptions in flight.
+            self._logger.exception(
+                "an exception occurred in the background thread", exc_info=exc
+            )
+        # Suppress `OptFinished` if we were the originator.
+        return isinstance(exc_val, OptFinished) and exc_val.origin is self
 
     @property
     def _conn(self) -> Connection[Loss, Params]:
@@ -202,7 +226,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         except asyncio.CancelledError:
             self._logger.debug("connection closed by background thread")
             result = await self.join()
-            raise OptFinished(result) from None
+            raise OptFinished(result, self) from None
         self._logger.debug("Get params: %s", received)
         return received
 
@@ -239,7 +263,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         except asyncio.CancelledError:
             self._logger.debug("connection closed by background thread")
             result = await self.join()
-            raise OptFinished(result) from None
+            raise OptFinished(result, self) from None
 
     async def as_generator(self) -> t.AsyncGenerator[Params, Loss]:
         """Alternative API based on asynchronous generator functions.
