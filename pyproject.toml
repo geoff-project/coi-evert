@@ -45,9 +45,8 @@ classifiers = [
 [project.optional-dependencies]
 examples = [
     'cernml-coi ~= 0.8.13',
-    'cernml-coi-optimizers ~= 1.1',
+    'cernml-coi-optimizers[scipy] ~= 1.1',
     'numpy ~= 1.20',
-    'scipy ~= 1.1',
 ]
 [tool.setuptools]
 zip-safe = true
@@ -86,20 +85,13 @@ exclude_also = [
 ]
 
 [tool.pylint.main]
-ignore-patterns = ['.*\.pyi$', 'test_.*\.py$']
+ignore-patterns = ['.*\.pyi$', 'test_.*\.py$', 'docs/conf.py']
 
 [tool.pylint.basic]
 good-names = ['i', 'j', 'k', 'x0', '_']
 
 [tool.pylint.'messages control']
-disable = [
-    'fixme',
-    'line-too-long',
-    'similarities',
-    'unbalanced-tuple-unpacking',
-    'unpacking-non-sequence',
-    'unsubscriptable-object',
-]
+disable = ['fixme', 'line-too-long', 'similarities']
 
 [tool.mypy]
 disallow_untyped_defs = true
@@ -109,3 +101,44 @@ mypy_path = '$MYPY_CONFIG_FILE_DIR/src'
 [[tool.mypy.overrides]]
 module = ['scipy.*', 'gym.*', 'matplotlib.*']
 ignore_missing_imports = true
+
+[tool.ruff]
+fix = true
+extend-select = [
+    'A', 'ARG', 'ASYNC', 'B', 'C4', 'C90', 'COM818', 'D', 'DTZ', 'EXE', 'FLY',
+    'I', 'ISC', 'NPY', 'PD', 'PERF', 'PGH', 'PIE', 'PT', 'PTH', 'PYI', 'RET',
+    'RSE', 'RUF', 'SIM', 'SLOT', 'T10', 'TRY',
+]
+ignore = [
+    'D102',   # To be fixed
+    'D105',   # Missing docstring in magic method
+    'D107',   # Missing docstring in __init__
+    'D412',   # No blank lines allowed between a section header and its content
+    'D417',   # Missing argument description in the docstring
+    'RUF100', # Unused `noqa` directive
+    'TRY301', # Abstract `raise` to an inner function
+    'TRY003', # Avoid specifying long messages outside the exception class
+]
+unfixable = [
+    'F401',  # unused-import
+]
+src = ['examples', 'src', 'test']
+target-version = 'py37'
+
+[tool.ruff.per-file-ignores]
+'src/cernml/evert/_runner.py' = ['ARG', 'B', 'C', 'SIM', 'PYI036']
+'{tests,docs}/*' = ['A001', 'ARG', 'D']
+# 'stubs/*' = ['A']
+
+[tool.ruff.flake8-pytest-style]
+fixture-parentheses = false
+
+[tool.ruff.isort]
+known-first-party = ['cernml']
+
+[tool.ruff.pycodestyle]
+max-doc-length = 72
+
+[tool.ruff.pydocstyle]
+convention = 'google'
+ignore-decorators = ['overload', 'overrides']

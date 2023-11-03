@@ -440,14 +440,9 @@ class _BackgroundWorker(t.Generic[Params, Loss, OptResult]):
             logger.debug("Get loss: %s", loss)
             return loss
 
+        logger.debug("Start optimization routine")
         try:
-            logger.debug("Start optimization routine")
             result = self.solve(_objective, self.x0)
-            logger.debug("Optimization routine finished!")
-            logger.debug("Achieved result: %s", result)
-            logger.debug("Closing connection to main thread")
-            loop.call_soon_threadsafe(conn.close)
-            return result
         except concurrent.futures.CancelledError:  # noqa: E722
             logger.debug("exiting after cancellation")
             raise
@@ -455,4 +450,8 @@ class _BackgroundWorker(t.Generic[Params, Loss, OptResult]):
             logger.exception("exiting due to exception")
             raise
         finally:
+            logger.debug("Closing connection to main thread")
             loop.call_soon_threadsafe(conn.close)
+        logger.debug("Optimization routine finished!")
+        logger.debug("Achieved result: %s", result)
+        return result

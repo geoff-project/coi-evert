@@ -161,7 +161,7 @@ class Runner:
                 uncancel = getattr(task, "uncancel", None)
                 if uncancel is not None and uncancel() == 0:
                     # pylint: disable = raise-missing-from
-                    raise KeyboardInterrupt()
+                    raise KeyboardInterrupt
             raise  # CancelledError
         finally:
             if (
@@ -200,7 +200,7 @@ class Runner:
             # wakeup loop if it is blocked by select() with long timeout
             self._loop.call_soon_threadsafe(lambda: None)
             return
-        raise KeyboardInterrupt()
+        raise KeyboardInterrupt
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> None:

@@ -154,7 +154,7 @@ class Connection(t.Generic[SendT, RecvT]):
         # If the other side is waiting on _send.get(), they won't
         # _recv.put(). That's a deadlock.
         if not self._send.full():
-            raise QueueEmpty()
+            raise QueueEmpty
         try:
             return await self._recv.get()
         except asyncio.CancelledError:
@@ -192,7 +192,7 @@ class Connection(t.Generic[SendT, RecvT]):
         # If the other side is waiting on _recv.put(), they won't
         # _send.get(). That's a deadlock.
         if not self._recv.empty():
-            raise QueueFull()
+            raise QueueFull
         try:
             return await self._send.put(item)
         except asyncio.CancelledError:

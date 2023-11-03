@@ -8,6 +8,10 @@ import pytest
 from cernml.evert.synch import CancelledError, MethodOrderError, OptFinished, evert
 
 
+class MockException(Exception):
+    """Exception raised specifically for testing."""
+
+
 def test_context_manager() -> None:
     # Given:
     solve = mock.Mock(name="solve")
@@ -145,14 +149,13 @@ def test_exit_catches_cancelled_error() -> None:
 
 def test_ask_reraises_exception() -> None:
     # Given:
-    error = Exception()
+    error = MockException()
     solve = mock.Mock(name="solve")
     solve.side_effect = error
     x0 = mock.Mock(name="x0")
     # When:
-    with pytest.raises(Exception) as exc_info:
-        with evert(solve, x0) as eversion:
-            eversion.ask()
+    with pytest.raises(MockException) as exc_info, evert(solve, x0) as eversion:
+        eversion.ask()
     # Then:
     solve.assert_called_once_with(mock.ANY, x0)
     assert exc_info.value is error
@@ -160,16 +163,15 @@ def test_ask_reraises_exception() -> None:
 
 def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
     # Given:
-    bg_error = Exception("bg_error")
-    fg_error = Exception("fg_error")
+    bg_error = MockException("bg_error")
+    fg_error = MockException("fg_error")
     solve = mock.Mock(name="solve")
     solve.side_effect = bg_error
     x0 = mock.Mock(name="x0")
     # When:
-    with caplog.at_level("ERROR"):
-        with pytest.raises(Exception) as exc_info:
-            with evert(solve, x0):
-                raise fg_error
+    caplog.set_level("ERROR")
+    with pytest.raises(MockException) as exc_info, evert(solve, x0):
+        raise fg_error
     # Then:
     assert exc_info.value is fg_error
     bg_record, fg_record = caplog.records
@@ -186,16 +188,15 @@ def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_exit_reraises_bg_exception() -> None:
     # Given:
-    ctx_error = Exception("ctx_error")
-    bg_error = Exception("bg_error")
+    ctx_error = MockException("ctx_error")
+    bg_error = MockException("bg_error")
     bg_error.__context__ = ctx_error
     solve = mock.Mock(name="solve")
     solve.side_effect = bg_error
     x0 = mock.Mock(name="x0")
     # When:
-    with pytest.raises(Exception) as exc_info:
-        with evert(solve, x0):
-            pass
+    with pytest.raises(MockException) as exc_info, evert(solve, x0):
+        pass
     # Then:
     assert exc_info.value is bg_error
     assert exc_info.value.__context__ is ctx_error
@@ -208,9 +209,8 @@ def test_exit_does_not_suppress_cancelled_error() -> None:
     solve.side_effect = lambda obj, x0: obj(x0)
     x0 = mock.Mock(name="x0")
     # When:
-    with pytest.raises(CancelledError):
-        with evert(solve, x0) as eversion:
-            eversion.join()
+    with pytest.raises(CancelledError), evert(solve, x0) as eversion:
+        eversion.join()
     # Then:
     solve.assert_called_once_with(mock.ANY, x0)
 
@@ -232,8 +232,7 @@ def test_exit_suppresses_only_own_opt_finished() -> None:
     solve = mock.Mock(name="solve")
     x0 = mock.Mock(name="x0")
     # When:
-    with pytest.raises(OptFinished):
-        with evert(solve, x0):
-            # Then:
-            # `with evert` must not capture this exception:
-            evert(solve, x0).ask()
+    with pytest.raises(OptFinished), evert(solve, x0):
+        # Then:
+        # `with evert` must not capture this exception:
+        evert(solve, x0).ask()

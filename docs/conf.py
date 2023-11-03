@@ -3,12 +3,6 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later OR EUPL-1.2+
 
-# pylint: disable = import-outside-toplevel
-# pylint: disable = invalid-name
-# pylint: disable = redefined-builtin
-# pylint: disable = too-many-arguments
-# pylint: disable = unused-argument
-
 """Configuration file for the Sphinx documentation builder.
 
 This file only contains a selection of the most common options. For a
@@ -33,11 +27,9 @@ try:
     import importlib_metadata
 except ImportError:
     # Starting with Python 3.10 (see pyproject.toml).
-    # pylint: disable = ungrouped-imports
-    import importlib.metadata as importlib_metadata  # type: ignore
+    import importlib.metadata as importlib_metadata  # type: ignore[import]
 
 if t.TYPE_CHECKING:
-    # pylint: disable = unused-import
     from sphinx.application import Sphinx
     from sphinx.environment import BuildEnvironment
 

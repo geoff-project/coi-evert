@@ -41,8 +41,10 @@ async def test_default_is_empty_and_full() -> None:
     send: Connection[None, None]
     recv: Connection[None, None]
     send, recv = channel()
-    assert send.empty() and send.full()
-    assert recv.empty() and recv.full()
+    assert send.empty()
+    assert send.full()
+    assert recv.empty()
+    assert recv.full()
 
 
 async def test_not_empty_if_receiving() -> None:

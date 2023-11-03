@@ -54,6 +54,7 @@ leaving its associated :keyword:`with` block:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 from typing import Any, Deque, Generic, Optional, Tuple, TypeVar, Union, cast
 
@@ -117,10 +118,8 @@ def _has_putters(
 
 def _remove_silently(queue: Deque[ItemT], item: ItemT) -> None:
     """Like `list.remove()` but do nothing if *item* is missing."""
-    try:
+    with contextlib.suppress(ValueError):
         queue.remove(item)
-    except ValueError:
-        pass
 
 
 class RendezvousQueue(Generic[ItemT]):
@@ -200,7 +199,7 @@ class RendezvousQueue(Generic[ItemT]):
         while (getters := self._getter_queue()) is None:
             try:
                 return self.get_nowait()
-            except QueueEmpty:
+            except QueueEmpty:  # noqa: PERF203
                 pass
         # There are no putters in the queue, append a getter and wait
         # for it.
@@ -226,7 +225,7 @@ class RendezvousQueue(Generic[ItemT]):
             if not putter.done():
                 putter.set_result(None)
                 return item
-        raise QueueEmpty()
+        raise QueueEmpty
 
     async def put(self, item: ItemT) -> None:
         """Synchronize with a `get()` and return its item.
@@ -241,7 +240,7 @@ class RendezvousQueue(Generic[ItemT]):
         while (putters := self._putter_queue()) is None:
             try:
                 return self.put_nowait(item)
-            except QueueFull:
+            except QueueFull:  # noqa: PERF203
                 pass
         # There are no getters in the queue, append a putter and wait
         # for it.
@@ -249,7 +248,7 @@ class RendezvousQueue(Generic[ItemT]):
         putters.append((item, putter))
         try:
             await putter
-        except:  # noqa: E722
+        except:
             putter.cancel("queue has been closed")
             _remove_silently(putters, (item, putter))
             raise
@@ -267,7 +266,7 @@ class RendezvousQueue(Generic[ItemT]):
             if not getter.done():
                 getter.set_result(item)
                 return
-        raise QueueFull()
+        raise QueueFull
 
     @property
     def closed(self) -> bool:

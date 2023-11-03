@@ -39,8 +39,7 @@ def run_normal(opt: Optimizer, env: ParabolaEnv) -> OptimizeResult:
     `compute_single_objective()` with new arguments.
     """
     solve = make_solve_func(opt, env)
-    result = solve(env.compute_single_objective, env.get_initial_params())
-    return result
+    return solve(env.compute_single_objective, env.get_initial_params())
 
 
 def run_everted(opt: Optimizer, env: ParabolaEnv) -> OptimizeResult:

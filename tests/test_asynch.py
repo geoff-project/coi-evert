@@ -9,6 +9,10 @@ import pytest
 from cernml.evert.asynch import MethodOrderError, OptFinished, evert
 
 
+class MockException(Exception):
+    """Exception raised specifically for testing."""
+
+
 async def yield_to_other_tasks() -> None:
     """Give other tasks a chance to run.
 
@@ -161,12 +165,12 @@ async def test_exit_lets_cancelled_error_pass() -> None:
 
 async def test_ask_reraises_exception() -> None:
     # Given:
-    error = Exception()
+    error = MockException()
     solve = mock.Mock(name="solve")
     solve.side_effect = error
     x0 = mock.Mock(name="x0")
     # When:
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(MockException) as exc_info:
         async with evert(solve, x0) as eversion:
             await eversion.ask()
     # Then:
@@ -176,16 +180,15 @@ async def test_ask_reraises_exception() -> None:
 
 async def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
     # Given:
-    bg_error = Exception("bg_error")
-    fg_error = Exception("fg_error")
+    bg_error = MockException("bg_error")
+    fg_error = MockException("fg_error")
     solve = mock.Mock(name="solve")
     solve.side_effect = bg_error
     x0 = mock.Mock(name="x0")
     # When:
-    with caplog.at_level("ERROR"):
-        with pytest.raises(Exception) as exc_info:
-            async with evert(solve, x0):
-                raise fg_error
+    with caplog.at_level("ERROR"), pytest.raises(MockException) as exc_info:
+        async with evert(solve, x0):
+            raise fg_error
     # Then:
     assert exc_info.value is fg_error
     bg_record, fg_record = caplog.records
@@ -202,14 +205,14 @@ async def test_exit_logs_exceptions(caplog: pytest.LogCaptureFixture) -> None:
 
 async def test_exit_reraises_bg_exception() -> None:
     # Given:
-    ctx_error = Exception("ctx_error")
-    bg_error = Exception("bg_error")
+    ctx_error = MockException("ctx_error")
+    bg_error = MockException("bg_error")
     bg_error.__context__ = ctx_error
     solve = mock.Mock(name="solve")
     solve.side_effect = bg_error
     x0 = mock.Mock(name="x0")
     # When:
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(MockException) as exc_info:
         async with evert(solve, x0):
             pass
     # Then:
