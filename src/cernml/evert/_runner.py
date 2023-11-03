@@ -1,8 +1,20 @@
-"""Polyfill of `asyncio.runners` from Python 3.11.
+# SPDX-FileCopyrightText: 2001-2023 Python Software Foundation
+# SPDX-FileCopyrightText: Copyright 2023, The Python Typing Team
+# SPDX-FileCopyrightText: 2023 GSI Helmholtzzentrum für Schwerionenforschung
+# SPDX-FileNotice: All rights not expressly granted are reserved.
+#
+# SPDX-License-Identifier: PSF-2.0 AND Apache-2.0
 
-Type annotations have been copied from Typeshed.
+"""Polyfill of `asyncio.runners.Runner`.
 
-Their respective licenses apply.
+The code has been copied from the Python 3.11 standard library,
+available at
+<https://github.com/python/cpython/blob/3.11/Lib/asyncio/runners.py>.
+Type annotations have been copied from Typeshed, avaliable at
+<https://github.com/python/typeshed/blob/main/stdlib/asyncio/runners.pyi>.
+
+Their respective licenses apply. See the source file as well as COPYING
+for more information.
 """
 
 import asyncio
