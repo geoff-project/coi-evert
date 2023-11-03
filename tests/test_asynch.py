@@ -73,7 +73,7 @@ async def test_ask_after_cancel() -> None:
 
 
 async def test_once() -> None:
-    def solve_side_effect(obj: t.Callable[[...], t.Any], x0: t.Any) -> t.Any:
+    def solve_side_effect(obj: t.Callable[..., t.Any], x0: t.Any) -> t.Any:
         obj(x0)
         return mock.DEFAULT
 
@@ -147,7 +147,7 @@ async def test_tell_after_success() -> None:
 
 
 async def test_exit_lets_cancelled_error_pass() -> None:
-    def solve_side_effect(obj: t.Callable[[...], t.Any], x0: t.Any) -> t.Any:
+    def solve_side_effect(obj: t.Callable[..., t.Any], x0: t.Any) -> t.Any:
         obj(x0)
         return mock.DEFAULT
 

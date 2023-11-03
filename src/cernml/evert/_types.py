@@ -28,7 +28,7 @@ SolveFunc = t.Callable[[Objective[Params, Loss], Params], OptResult]
 T = t.TypeVar("T")
 
 
-class OptFinished(Exception, t.Generic[OptResult]):
+class OptFinished(Exception, t.Generic[Params, Loss, OptResult]):
     """Raised by the eversion if the optimization has finished.
 
     Both `~cernml.evert.synch.Eversion.ask()` and
@@ -46,13 +46,17 @@ class OptFinished(Exception, t.Generic[OptResult]):
 
     __slots__ = ("result", "_origin")
 
-    def __init__(self, result: OptResult, origin: AsyncEversion) -> None:
+    def __init__(
+        self, result: OptResult, origin: AsyncEversion[Params, Loss, OptResult]
+    ) -> None:
         super().__init__(result)
         self.result = result
-        self._origin: t.Callable[[], t.Optional[AsyncEversion]] = weakref.ref(origin)
+        self._origin: t.Callable[
+            [], t.Optional[AsyncEversion[Params, Loss, OptResult]]
+        ] = weakref.ref(origin)
 
     @property
-    def origin(self) -> t.Optional[AsyncEversion]:
+    def origin(self) -> t.Optional[AsyncEversion[Params, Loss, OptResult]]:
         """The eversion object that raised this exception, or None.
 
         This property only exists for internal purposes. There is

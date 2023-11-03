@@ -112,7 +112,7 @@ class Runner:
 
     def run(
         self,
-        coro: t.Coroutine[t.Any, t.Any, T],
+        coro: t.Coroutine[None, t.Any, T],
         *,
         context: t.Optional[contextvars.Context] = None,
     ) -> T:
@@ -134,7 +134,7 @@ class Runner:
 
         if context is None:
             context = self._context
-        task = self._loop.create_task(coro, context=context)
+        task: asyncio.Task[T] = self._loop.create_task(coro, context=context)
 
         if (
             threading.current_thread() is threading.main_thread()
@@ -190,7 +190,7 @@ class Runner:
         self._state = _State.INITIALIZED
 
     def _on_sigint(
-        self, signum: int, frame: "FrameType", main_task: asyncio.Task
+        self, signum: int, frame: "FrameType", main_task: asyncio.Task[t.Any]
     ) -> None:
         # pylint: disable = unused-argument
         self._interrupt_count += 1

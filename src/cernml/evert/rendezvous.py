@@ -90,7 +90,7 @@ the sent item and complete the putter's future.
 
 def _has_getters(
     queue: Union[Deque[_Getter[ItemT]], Deque[_Putter[ItemT]]]
-) -> TypeGuard[Deque[_Getter]]:
+) -> TypeGuard[Deque[_Getter[ItemT]]]:
     """Type guard for getter queues.
 
     Return True if there's at least one getter waiting in the queue.
@@ -104,7 +104,7 @@ def _has_getters(
 
 def _has_putters(
     queue: Union[Deque[_Getter[ItemT]], Deque[_Putter[ItemT]]]
-) -> TypeGuard[Deque[_Putter]]:
+) -> TypeGuard[Deque[_Putter[ItemT]]]:
     """Type guard for putter queues.
 
     Returns True if there's at least one putter waiting in the queue.
@@ -203,7 +203,7 @@ class RendezvousQueue(Generic[ItemT]):
                 pass
         # There are no putters in the queue, append a getter and wait
         # for it.
-        getter = self._loop.create_future()
+        getter: asyncio.Future[ItemT] = self._loop.create_future()
         getters.append(getter)
         try:
             return await getter

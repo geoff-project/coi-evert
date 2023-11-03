@@ -49,7 +49,7 @@ def test_empty() -> None:
 
 
 def test_once() -> None:
-    def solve_side_effect(obj: t.Callable[[...], t.Any], x0: t.Any) -> t.Any:
+    def solve_side_effect(obj: t.Callable[..., t.Any], x0: t.Any) -> t.Any:
         obj(x0)
         return mock.DEFAULT
 
@@ -130,7 +130,7 @@ def test_set_logger() -> None:
 
 
 def test_exit_catches_cancelled_error() -> None:
-    def solve_side_effect(obj: t.Callable[[...], t.Any], x0: t.Any) -> t.Any:
+    def solve_side_effect(obj: t.Callable[..., t.Any], x0: t.Any) -> t.Any:
         obj(x0)
         return mock.DEFAULT
 

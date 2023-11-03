@@ -9,11 +9,13 @@ import pytest
 
 from cernml.evert.channel import Connection, QueueEmpty, QueueFull, channel
 
+T = t.TypeVar("T")  # pylint: disable=invalid-name
+
 
 @contextmanager
 def autocancel_task(
-    coro: t.Coroutine, name: t.Optional[str] = None
-) -> t.Iterator[asyncio.Task]:
+    coro: t.Coroutine[None, t.Any, T], name: t.Optional[str] = None
+) -> t.Iterator[asyncio.Task[T]]:
     """Context manager to create a task that is cancelled upon exit.
 
     This is a thin wrapper around `asyncio.create_task()` that ensures

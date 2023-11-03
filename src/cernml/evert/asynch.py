@@ -90,7 +90,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import inspect
 import logging
 import sys
 import typing as t
@@ -118,7 +117,9 @@ __all__ = [
 CancelledError = asyncio.CancelledError
 
 
-def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
+def evert(
+    solve: SolveFunc[Params, Loss, OptResult], x0: Params
+) -> Eversion[Params, Loss, OptResult]:
     """Turn a long-running function inside out.
 
     This assumes that *solve* is a function that receives a second
@@ -192,7 +193,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
             self._worker = _BackgroundWorker(solve, x0, theirs)
             vars(self)["_conn"] = ours
             return ours
-        return vars(self)["_conn"]
+        return t.cast(Connection[Loss, Params], vars(self)["_conn"])
 
     async def _join_ignore_exceptions(self) -> None:
         """Helper function to `ask()` and `get()`.
@@ -369,7 +370,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
         # If worker hadn't started yet, `cancel()` will make it
         # unstartable.
         self.cancel()
-        if inspect.isawaitable(self._worker):
+        if isinstance(self._worker, _BackgroundWorker):
             self._logger.debug("Joining thread …")
             return await self._worker
         raise asyncio.CancelledError("solve() never started")
@@ -382,7 +383,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
 _LazyArgs: TypeAlias = tuple[SolveFunc[Params, Loss, OptResult], Params]
 
 
-class _BackgroundWorker(t.Generic[Params, Loss, OptResult]):
+class _BackgroundWorker(t.Awaitable[OptResult], t.Generic[Params, Loss, OptResult]):
     """Worker thread that runs `solve()` on a background thread.
 
     This could be a single function but that confuses Mypy.

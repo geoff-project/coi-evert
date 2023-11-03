@@ -94,6 +94,7 @@ good-names = ['i', 'j', 'k', 'x0', '_']
 disable = ['fixme', 'line-too-long', 'similarities']
 
 [tool.mypy]
+strict = true
 disallow_untyped_defs = true
 explicit_package_bases = true
 mypy_path = '$MYPY_CONFIG_FILE_DIR/src'
@@ -101,6 +102,10 @@ mypy_path = '$MYPY_CONFIG_FILE_DIR/src'
 [[tool.mypy.overrides]]
 module = ['scipy.*', 'gym.*', 'matplotlib.*']
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ['examples.example']
+warn_return_any = false
 
 [tool.ruff]
 fix = true

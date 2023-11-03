@@ -76,7 +76,9 @@ CancelledError = asyncio.CancelledError
 
 
 @t.overload
-def evert(solve: SolveFunc[Params, Loss, OptResult], x0: Params) -> Eversion:
+def evert(
+    solve: SolveFunc[Params, Loss, OptResult], x0: Params
+) -> Eversion[Params, Loss, OptResult]:
     ...
 
 
@@ -87,7 +89,7 @@ def evert(
     *,
     debug: t.Optional[bool] = None,
     loop_factory: t.Optional[t.Callable[[], asyncio.AbstractEventLoop]] = None,
-) -> Eversion:
+) -> Eversion[Params, Loss, OptResult]:
     ...
 
 
@@ -97,7 +99,7 @@ def evert(
     *,
     debug: t.Optional[bool] = None,
     loop_factory: t.Optional[t.Callable[[], asyncio.AbstractEventLoop]] = None,
-) -> Eversion:
+) -> Eversion[Params, Loss, OptResult]:
     """Turn a long-running function inside out.
 
     This assumes that *solve* is a function that receives a second
@@ -268,7 +270,7 @@ class Eversion(t.Generic[Params, Loss, OptResult]):
                 while True:
                     next(awaitable)
             except StopIteration as stop:
-                return stop.value
+                return t.cast(OptResult, stop.value)
         return self._runner.run(self._inner.join())
 
     def set_logger(self, logger: logging.Logger) -> None:
