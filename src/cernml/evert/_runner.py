@@ -146,7 +146,13 @@ class Runner:
 
         if context is None:
             context = self._context
-        task: asyncio.Task[T] = self._loop.create_task(coro, context=context)
+        # Can't pass `context` keyword argument, it didn't exist before
+        # Python 3.11.
+        task: asyncio.Task[T]
+        if context is not None:
+            task = context.run(self._loop.create_task, coro)
+        else:
+            task = self._loop.create_task(coro)
 
         if (
             threading.current_thread() is threading.main_thread()
