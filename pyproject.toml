@@ -21,7 +21,7 @@ authors = [
 description = 'Turn optimization loops inside out'
 readme = 'README.md'
 license = {file='COPYING'}
-requires-python = '>=3.7'
+requires-python = '>=3.9'
 dependencies = [
     'typing-extensions; python_version < "3.10"',
 ]
@@ -31,8 +31,6 @@ classifiers = [
     'Natural Language :: English',
     'Operating System :: OS Independent',
     'Programming Language :: Python :: 3 :: Only',
-    'Programming Language :: Python :: 3.7',
-    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
@@ -43,10 +41,21 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+test = [
+    'numpy ~= 1.21',
+    'pytest',
+    'pytest-cov',
+    'pytest-asyncio',
+]
+doc = [
+    'sphinx',
+    'sphinx-copybutton',
+    'python-docs-theme',
+]
 examples = [
+    'numpy ~= 1.21',
     'cernml-coi ~= 0.8.13',
     'cernml-coi-optimizers[scipy] ~= 1.1',
-    'numpy ~= 1.20',
 ]
 [tool.setuptools]
 zip-safe = true

@@ -4,8 +4,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later OR EUPL-1.2+
 
-# Automatically generated files.
-cernml/coi/_version.py
+# Reuse shall ignore Gitlab CI cache files for pre-commit.
+.cache
 
 # Coverage.py output
 .coverage
