@@ -134,16 +134,19 @@ async def test_dropping_sender_closes() -> None:
     send, recv = channel()
     with autocancel_task(sender(send)) as task:
         del send
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        # Danger: this is sensitive to when the GC runs. It works
-        # reliably on Python 3.11, but other versions might break it.
-        assert not recv.closed
-        await yield_to_other_tasks()
-        assert recv.closed
-        with pytest.raises(asyncio.CancelledError):
-            recv.get_nowait()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # Before Python 3.11, deleting the reference to `task` is necessary
+    # to make finalizers run. With Python 3.11+, this is no longer
+    # necessary.
+    del task
+    # Danger: this is sensitive to when the GC runs. It works
+    # reliably on Python 3.11, but other versions might break it.
+    assert not recv.closed
+    await yield_to_other_tasks()
+    assert recv.closed
+    with pytest.raises(asyncio.CancelledError):
+        recv.get_nowait()
 
 
 async def test_dropping_receiver_closes() -> None:
@@ -155,16 +158,19 @@ async def test_dropping_receiver_closes() -> None:
     send, recv = channel()
     with autocancel_task(receiver(recv)) as task:
         del recv
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        # Danger: this is sensitive to when the GC runs. It works
-        # reliably on Python 3.11, but other versions might break it.
-        assert not send.closed
-        await yield_to_other_tasks()
-        assert send.closed
-        with pytest.raises(asyncio.CancelledError):
-            send.put_nowait(1)
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # Before Python 3.11, deleting the reference to `task` is necessary
+    # to make finalizers run. With Python 3.11+, this is no longer
+    # necessary.
+    del task
+    # Danger: this is sensitive to when the GC runs. It works
+    # reliably on Python 3.11, but other versions might break it.
+    assert not send.closed
+    await yield_to_other_tasks()
+    assert send.closed
+    with pytest.raises(asyncio.CancelledError):
+        send.put_nowait(1)
 
 
 async def test_context_manager() -> None:
