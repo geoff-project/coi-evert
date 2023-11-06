@@ -13,6 +13,10 @@ available at
 Type annotations have been copied from Typeshed, avaliable at
 <https://github.com/python/typeshed/blob/main/stdlib/asyncio/runners.pyi>.
 
+Finally, a workaround to bug
+<https://github.com/python/cpython/issues/89553> has been added in the
+method `Runner.run()` and marked with comments.
+
 Their respective licenses apply. See the source file as well as COPYING
 for more information.
 """
@@ -174,12 +178,22 @@ class Runner:
         self._interrupt_count = 0
         try:
             return self._loop.run_until_complete(task)
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             if self._interrupt_count > 0:
                 uncancel = getattr(task, "uncancel", None)
                 if uncancel is not None and uncancel() == 0:
                     # pylint: disable = raise-missing-from
                     raise KeyboardInterrupt
+            # Workaround to <https://github.com/python/cpython/issues/89553>
+            # The `CancelledError` raised inside our coroutine is wrapped
+            # inside another `CancelledError(msg=None)` before Python
+            # 3.11. Undo the wrapping and reraise the original
+            # exception. With Python 3.11+,
+            # `asyncio.futures.Future._make_cancelled_error()` prevents
+            # this wrapping from happening in the first place.
+            if sys.version_info < (3, 11):
+                if not exc.args and isinstance(exc.__context__, asyncio.CancelledError):
+                    raise exc.__context__ from None
             raise  # CancelledError
         finally:
             if (
