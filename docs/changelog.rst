@@ -14,3 +14,8 @@ Unreleased
 ----------
 
 No changes yet!
+
+v1.0.0
+------
+
+Initial release.
